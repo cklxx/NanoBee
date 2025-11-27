@@ -15,6 +15,11 @@ ensure_env_file() {
 }
 
 ensure_backend_dependencies() {
+  if [[ "${SKIP_BACKEND_INSTALL:-0}" == "1" ]]; then
+    echo "[run_fullstack] Skipping backend dependency installation (SKIP_BACKEND_INSTALL=1)"
+    return
+  fi
+
   if python3 -m pip show nanobee-backend >/dev/null 2>&1; then
     return
   fi
@@ -53,7 +58,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Install frontend deps if missing
-if [[ ! -d frontend/node_modules ]]; then
+if [[ "${SKIP_FRONTEND_INSTALL:-0}" == "1" ]]; then
+  echo "[run_fullstack] Skipping frontend dependency installation (SKIP_FRONTEND_INSTALL=1)"
+elif [[ ! -d frontend/node_modules ]]; then
   echo "[run_fullstack] Installing frontend dependencies"
   (cd frontend && npm install)
 fi
