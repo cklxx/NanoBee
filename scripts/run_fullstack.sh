@@ -4,6 +4,35 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+ensure_env_file() {
+  local target=$1
+  local example=$2
+
+  if [[ ! -f "$target" && -f "$example" ]]; then
+    echo "[run_fullstack] ${target} not found, copying from ${example}"
+    cp "$example" "$target"
+  fi
+}
+
+ensure_backend_dependencies() {
+  if [[ "${SKIP_BACKEND_INSTALL:-0}" == "1" ]]; then
+    echo "[run_fullstack] Skipping backend dependency installation (SKIP_BACKEND_INSTALL=1)"
+    return
+  fi
+
+  if python3 -m pip show nanobee-backend >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "[run_fullstack] Installing backend dependencies (editable mode)"
+  python3 -m pip install -e backend
+}
+
+ensure_env_file ".env" ".env.example"
+ensure_env_file "frontend/.env" "frontend/.env.example"
+
+ensure_backend_dependencies
+
 if [[ -f .env ]]; then
   echo "[run_fullstack] Loading environment from .env"
   set -a
@@ -29,7 +58,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Install frontend deps if missing
-if [[ ! -d frontend/node_modules ]]; then
+if [[ "${SKIP_FRONTEND_INSTALL:-0}" == "1" ]]; then
+  echo "[run_fullstack] Skipping frontend dependency installation (SKIP_FRONTEND_INSTALL=1)"
+elif [[ ! -d frontend/node_modules ]]; then
   echo "[run_fullstack] Installing frontend dependencies"
   (cd frontend && npm install)
 fi
