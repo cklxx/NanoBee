@@ -20,7 +20,7 @@ def _default_files(goal: str) -> Dict[str, str]:
 set -e
 
 if [ -f requirements.txt ]; then
-  pip install -r requirements.txt
+  python3 -m pip install -r requirements.txt
 fi
 
 echo "Running smoke checks..."

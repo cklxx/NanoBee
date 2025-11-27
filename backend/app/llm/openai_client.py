@@ -7,6 +7,16 @@ import httpx
 from .base import LLMClient, LLMMessage
 
 
+def _resolve_endpoint(base_url: str | None) -> str:
+    """Normalize base URLs so both root (e.g., .../v1) and full endpoints work."""
+    if not base_url:
+        return "https://api.openai.com/v1/chat/completions"
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/chat/completions"):
+        return normalized
+    return f"{normalized}/chat/completions"
+
+
 class OpenAIClient(LLMClient):
     """Minimal OpenAI chat client using the HTTP API."""
 
@@ -18,7 +28,7 @@ class OpenAIClient(LLMClient):
     ) -> None:
         self.api_key = api_key
         self.model = model
-        self.base_url = base_url or "https://api.openai.com/v1/chat/completions"
+        self.base_url = _resolve_endpoint(base_url)
 
     async def chat(self, messages: List[LLMMessage], tools: list | None = None) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"model": self.model, "messages": messages}

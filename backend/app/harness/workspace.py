@@ -15,7 +15,15 @@ def ensure_workspace(ws: WorkspaceConfig) -> Path:
 
 def list_workspace_files(ws: WorkspaceConfig) -> List[str]:
     root = Path(ws.root_dir)
-    return [str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()]
+    files: List[str] = []
+    for p in root.rglob("*"):
+        if not p.is_file():
+            continue
+        # Skip git internals for safety/noise reduction
+        if any(part == ".git" for part in p.parts):
+            continue
+        files.append(str(p.relative_to(root)))
+    return files
 
 
 def read_file(ws: WorkspaceConfig, rel_path: str) -> str:

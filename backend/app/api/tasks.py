@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -45,6 +46,48 @@ def _record_event(
     )
     db.add(event)
     db.commit()
+
+
+def _truncate(text: str, limit: int = 500) -> str:
+    return text if len(text) <= limit else text[:limit] + "...(truncated)"
+
+
+class InstrumentedLLM(LLMClient):
+    """Wraps an LLM client to emit timeline events for requests/responses."""
+
+    def __init__(
+        self,
+        inner: LLMClient,
+        on_start: Callable[[list[dict[str, Any]]], None] | None = None,
+        on_success: Callable[[Any], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
+    ) -> None:
+        self.inner = inner
+        self.on_start = on_start
+        self.on_success = on_success
+        self.on_error = on_error
+
+    async def chat(self, messages: list[dict[str, Any]], tools: list | None = None) -> dict:
+        if self.on_start:
+            try:
+                self.on_start(messages)
+            except Exception:
+                pass
+        try:
+            resp = await self.inner.chat(messages, tools=tools)
+            if self.on_success:
+                try:
+                    self.on_success(resp)
+                except Exception:
+                    pass
+            return resp
+        except Exception as exc:  # pragma: no cover - observational only
+            if self.on_error:
+                try:
+                    self.on_error(exc)
+                except Exception:
+                    pass
+            raise
 
 
 @router.post("", response_model=dict)
@@ -111,15 +154,53 @@ async def run_init_session(task_id: str, db: Session = Depends(deps.get_db)) -> 
         raise HTTPException(status_code=400, detail="Workspace missing")
 
     ensure_workspace(WorkspaceConfig(id=workspace.id, root_dir=workspace.root_dir))
-    llm = deps.get_llm_client()
+    base_llm = deps.get_llm_client()
     memory_store = MemoryStore(db, task.id)
     _record_event(db, task.id, "initializer", "start", agent_role="Initializer")
-    result: InitializerResult = await run_initializer(
-        TaskSpec(id=task.id, user_id=task.user_id or "", goal=task.goal, workspace_id=task.workspace_id),
-        WorkspaceConfig(id=workspace.id, root_dir=workspace.root_dir),
-        llm,
-        memory_store=memory_store,
+    llm = InstrumentedLLM(
+        base_llm,
+        on_start=lambda messages: _record_event(
+            db,
+            task.id,
+            "initializer",
+            "llm_request",
+            agent_role="Initializer",
+            payload={"prompt_preview": _truncate(str(messages[-1].get("content", ""))) if messages else ""},
+        ),
+        on_success=lambda resp: _record_event(
+            db,
+            task.id,
+            "initializer",
+            "llm_response",
+            agent_role="Initializer",
+            payload={"content_preview": _truncate(str(resp.get("content", ""))) if isinstance(resp, dict) else ""},
+        ),
+        on_error=lambda exc: _record_event(
+            db,
+            task.id,
+            "initializer",
+            "llm_error",
+            agent_role="Initializer",
+            payload={"error": str(exc)},
+        ),
     )
+    try:
+        result: InitializerResult = await run_initializer(
+            TaskSpec(id=task.id, user_id=task.user_id or "", goal=task.goal, workspace_id=task.workspace_id),
+            WorkspaceConfig(id=workspace.id, root_dir=workspace.root_dir),
+            llm,
+            memory_store=memory_store,
+        )
+    except Exception as exc:
+        _record_event(
+            db,
+            task.id,
+            "initializer",
+            "error",
+            agent_role="Initializer",
+            payload={"error": str(exc)},
+        )
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}")
     task.status = "running"
     task.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -227,13 +308,51 @@ async def _execute_coding_session(
         agent_role="CodingAgent",
         payload={"feature_id": session_config.feature_id},
     )
-    result: CodingResult = await run_coding_session(
-        TaskSpec(id=task.id, user_id=task.user_id or "", goal=task.goal, workspace_id=task.workspace_id),
-        WorkspaceConfig(id=workspace.id, root_dir=workspace.root_dir),
+    logging_llm = InstrumentedLLM(
         llm,
-        session_config,
-        memory_store,
+        on_start=lambda messages: _record_event(
+            db,
+            task.id,
+            "coding",
+            "llm_request",
+            agent_role="CodingAgent",
+            payload={"feature_id": session_config.feature_id, "prompt_preview": _truncate(str(messages[-1].get("content", ""))) if messages else ""},
+        ),
+        on_success=lambda resp: _record_event(
+            db,
+            task.id,
+            "coding",
+            "llm_response",
+            agent_role="CodingAgent",
+            payload={"feature_id": session_config.feature_id, "content_preview": _truncate(str(resp.get("content", ""))) if isinstance(resp, dict) else ""},
+        ),
+        on_error=lambda exc: _record_event(
+            db,
+            task.id,
+            "coding",
+            "llm_error",
+            agent_role="CodingAgent",
+            payload={"feature_id": session_config.feature_id, "error": str(exc)},
+        ),
     )
+    try:
+        result: CodingResult = await run_coding_session(
+            TaskSpec(id=task.id, user_id=task.user_id or "", goal=task.goal, workspace_id=task.workspace_id),
+            WorkspaceConfig(id=workspace.id, root_dir=workspace.root_dir),
+            logging_llm,
+            session_config,
+            memory_store,
+        )
+    except Exception as exc:
+        _record_event(
+            db,
+            task.id,
+            "coding",
+            "error",
+            agent_role="CodingAgent",
+            payload={"feature_id": session_config.feature_id, "error": str(exc)},
+        )
+        raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}")
     task.status = "succeeded" if result.tests_ok and all_features_passing(Path(workspace.root_dir)) else "running"
     task.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -308,8 +427,36 @@ async def evaluate_task(task_id: str, db: Session = Depends(deps.get_db)) -> dic
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    llm = deps.get_llm_client()
+    base_llm = deps.get_llm_client()
     workspace_root = Path(workspace.root_dir)
+    _record_event(db, task.id, "eval", "start", agent_role="EvalAgent")
+    llm = InstrumentedLLM(
+        base_llm,
+        on_start=lambda messages: _record_event(
+            db,
+            task.id,
+            "eval",
+            "llm_request",
+            agent_role="EvalAgent",
+            payload={"prompt_preview": _truncate(str(messages[-1].get("content", ""))) if messages else ""},
+        ),
+        on_success=lambda resp: _record_event(
+            db,
+            task.id,
+            "eval",
+            "llm_response",
+            agent_role="EvalAgent",
+            payload={"content_preview": _truncate(str(resp.get("content", ""))) if isinstance(resp, dict) else ""},
+        ),
+        on_error=lambda exc: _record_event(
+            db,
+            task.id,
+            "eval",
+            "llm_error",
+            agent_role="EvalAgent",
+            payload={"error": str(exc)},
+        ),
+    )
     outcome: EvalOutcome = await evaluate_task_result(task.id, task.goal, workspace_root, llm)
     result = persist_eval_result(db, task.id, outcome)
     _record_event(

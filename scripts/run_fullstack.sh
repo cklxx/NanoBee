@@ -48,7 +48,7 @@ export NEXT_PUBLIC_API_BASE="$API_BASE"
 
 # Launch backend
 echo "[run_fullstack] Starting backend on port ${BACKEND_PORT}"
-uvicorn backend.app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
+python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 
 cleanup() {

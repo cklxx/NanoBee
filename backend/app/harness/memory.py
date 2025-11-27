@@ -17,12 +17,14 @@ class MemoryStore:
         task_id: str,
         llm: object | None = None,
         compact_threshold: int = 5,
+        log_task_events: bool = True,
     ):
         self.db = db
         self.task_id = task_id
         # LLM is optional; if provided it should mirror the async LLMClient API.
         self.llm = llm
         self.compact_threshold = compact_threshold
+        self.log_task_events = log_task_events
 
     def _buffer_scope(self) -> str:
         return f"task:{self.task_id}:buffer"
@@ -60,6 +62,17 @@ class MemoryStore:
         self.db.add(buffer)
         self.db.commit()
         self._maybe_compact(buffer)
+        if self.log_task_events:
+            event = models.TaskEvent(
+                task_id=self.task_id,
+                session_type="memory",
+                agent_role="Memory",
+                event_type="note",
+                payload={"text": text},
+                created_at=datetime.now(timezone.utc),
+            )
+            self.db.add(event)
+            self.db.commit()
 
     def _maybe_compact(self, buffer: models.MemoryChunk) -> None:
         events = [line for line in buffer.summary.splitlines() if line.strip()]

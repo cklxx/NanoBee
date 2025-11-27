@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 def _reset_settings(temp_dir: Path) -> None:
     os.environ["NANOBEE_DATABASE_URL"] = f"sqlite:///{temp_dir / 'data.db'}"
     os.environ["NANOBEE_WORKSPACES_ROOT"] = str(temp_dir / "workspaces")
+    os.environ["NANOBEE_ALLOW_DUMMY_LLM"] = "1"
 
     import backend.app.config as config
 

@@ -36,6 +36,11 @@ class Settings(BaseSettings):
         description="Allowed CORS origins for the API (comma-separated or JSON list)",
     )
 
+    allow_dummy_llm: bool = Field(
+        default=False,
+        description="Allow falling back to DummyLLM when no real LLM is configured (for local demos only).",
+    )
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parsed CORS origins as a list regardless of input format."""
