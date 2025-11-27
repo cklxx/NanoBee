@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Iterable
+
+from sqlalchemy.orm import Session
+
+from ..db import models
+
+
+class MemoryStore:
+    """A simple task-scoped memory buffer with periodic compaction."""
+
+    def __init__(
+        self,
+        db: Session,
+        task_id: str,
+        llm: object | None = None,
+        compact_threshold: int = 5,
+    ):
+        self.db = db
+        self.task_id = task_id
+        # LLM is optional; if provided it should mirror the async LLMClient API.
+        self.llm = llm
+        self.compact_threshold = compact_threshold
+
+    def _buffer_scope(self) -> str:
+        return f"task:{self.task_id}:buffer"
+
+    def _summary_scope(self) -> str:
+        return f"task:{self.task_id}:summary"
+
+    def _get_or_create_chunk(self, scope: str) -> models.MemoryChunk:
+        chunk = (
+            self.db.query(models.MemoryChunk)
+            .filter(models.MemoryChunk.scope == scope)
+            .order_by(models.MemoryChunk.last_updated.desc())
+            .first()
+        )
+        if not chunk:
+            chunk = models.MemoryChunk(
+                user_id=self.task_id,
+                scope=scope,
+                summary="",
+                embedding=None,
+                last_updated=datetime.now(timezone.utc),
+            )
+            self.db.add(chunk)
+            self.db.commit()
+            self.db.refresh(chunk)
+        return chunk
+
+    def add_event(self, text: str) -> None:
+        """Append an event to the buffer and compact if needed."""
+
+        buffer = self._get_or_create_chunk(self._buffer_scope())
+        combined = f"{buffer.summary}\n{text}".strip()
+        buffer.summary = combined
+        buffer.last_updated = datetime.now(timezone.utc)
+        self.db.add(buffer)
+        self.db.commit()
+        self._maybe_compact(buffer)
+
+    def _maybe_compact(self, buffer: models.MemoryChunk) -> None:
+        events = [line for line in buffer.summary.splitlines() if line.strip()]
+        if len(events) < self.compact_threshold:
+            return
+
+        summary_text = self._summarize(events)
+        summary_chunk = models.MemoryChunk(
+            user_id=self.task_id,
+            scope=self._summary_scope(),
+            summary=summary_text,
+            embedding=None,
+            last_updated=datetime.now(timezone.utc),
+        )
+        self.db.add(summary_chunk)
+        buffer.summary = ""
+        buffer.last_updated = datetime.now(timezone.utc)
+        self.db.commit()
+
+    def _summarize(self, events: Iterable[str]) -> str:
+        return " | ".join(events)
+
+    def query(self, k: int = 3) -> list[str]:
+        summaries = (
+            self.db.query(models.MemoryChunk)
+            .filter(models.MemoryChunk.scope == self._summary_scope())
+            .order_by(models.MemoryChunk.last_updated.desc())
+            .limit(k)
+            .all()
+        )
+        return [s.summary for s in summaries if s.summary]
