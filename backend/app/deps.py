@@ -20,5 +20,9 @@ def get_db() -> Generator:
 def get_llm_client() -> LLMClient:
     settings = get_settings()
     if settings.openai_api_key:
-        return OpenAIClient(api_key=settings.openai_api_key)
+        return OpenAIClient(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            base_url=settings.openai_base_url,
+        )
     return DummyLLM()

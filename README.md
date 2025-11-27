@@ -10,6 +10,7 @@
 ## 配置
 
 - 复制 `.env.example` 到 `.env` 并按需修改：数据库位置、工作区目录、可选的 OpenAI Key、前端 API 基址。
+- 如果需要对接兼容的 OpenAI 接口或切换模型，可设置 `NANOBEE_OPENAI_BASE_URL` 与 `NANOBEE_OPENAI_MODEL`。
 - 如果前端与后端运行在不同端口，请设置 `NANOBEE_CORS_ORIGINS`（逗号分隔）允许前端来源访问。
 
 ## API 快速上手
