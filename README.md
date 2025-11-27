@@ -83,6 +83,19 @@ npm run dev
 - `/`：任务列表。
 - `/tasks/[id]`：任务详情，包括 Timeline、Features、Files、Progress、Evaluation，并提供按钮触发 initializer / coding(all) / evaluation API。
 
+### 端到端（E2E）测试
+
+仓库内提供基于 Playwright 的端到端测试用例，会自动同时启动 FastAPI 后端与 Next.js 前端（使用 `scripts/run_fullstack.sh`）。
+
+```bash
+cd frontend
+npm install
+npx playwright install --with-deps  # 首次运行需要安装浏览器
+npm run test:e2e
+```
+
+可以通过设置环境变量自定义端口，例如 `BACKEND_PORT=8100 FRONTEND_PORT=3100 npm run test:e2e`。
+
 ### 全链路本地运行（后端 + 前端）
 
 1) 准备环境：复制 `.env.example` 到 `.env`，必要时调整数据库路径、工作区目录、CORS 来源与 API Base。

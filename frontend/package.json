@@ -5,7 +5,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "autoprefixer": "10.4.20",
@@ -19,6 +21,7 @@
     "@types/node": "20.12.7",
     "@types/react": "18.2.48",
     "@types/react-dom": "18.2.18",
+    "@playwright/test": "^1.45.0",
     "typescript": "5.4.5"
   }
 }

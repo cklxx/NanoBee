@@ -214,4 +214,5 @@ __marimo__/
 # Generated demo workspaces
 workspaces/
 backend/data.db
+data.db
 
