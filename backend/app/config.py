@@ -14,6 +14,10 @@ class Settings(BaseSettings):
         description="SQLAlchemy database URL",
     )
     openai_api_key: str | None = Field(default=None, description="OpenAI API key (optional)")
+    openai_base_url: str | None = Field(
+        default=None, description="Base URL for the OpenAI-compatible API"
+    )
+    openai_model: str = Field(default="gpt-4o-mini", description="LLM model to use")
     workspaces_root: Path = Field(
         default=Path("/workspace/NanoBee/workspaces"),
         description="Root directory where task workspaces are stored",

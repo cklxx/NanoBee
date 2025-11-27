@@ -10,10 +10,15 @@ from .base import LLMClient, LLMMessage
 class OpenAIClient(LLMClient):
     """Minimal OpenAI chat client using the HTTP API."""
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        base_url: str | None = None,
+    ) -> None:
         self.api_key = api_key
         self.model = model
-        self.base_url = "https://api.openai.com/v1/chat/completions"
+        self.base_url = base_url or "https://api.openai.com/v1/chat/completions"
 
     async def chat(self, messages: List[LLMMessage], tools: list | None = None) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"model": self.model, "messages": messages}
