@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="NANOBEE_",
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     database_url: str = Field(
         default=f"sqlite:///{Path(__file__).resolve().parent.parent / 'data.db'}",
@@ -19,27 +27,27 @@ class Settings(BaseSettings):
         description="Root directory where task workspaces are stored",
     )
 
-    cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:3000", "http://localhost:3001"],
-        description="Allowed CORS origins for the API",
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001",
+        description="Allowed CORS origins for the API (comma-separated or JSON list)",
     )
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def split_origins(cls, value: list[str] | str | None) -> list[str]:
-        """Allow comma-separated strings in env for convenience."""
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parsed CORS origins as a list regardless of input format."""
 
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        raw_value = self.cors_origins.strip()
+        try:
+            loaded = json.loads(raw_value)
+            if isinstance(loaded, list):
+                return [str(item).strip() for item in loaded if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
 
-    model_config = {
-        "env_prefix": "NANOBEE_",
-        "env_file": ".env",
-        "case_sensitive": False,
-    }
+        normalized = raw_value
+        if normalized.startswith("[") and normalized.endswith("]"):
+            normalized = normalized[1:-1]
+        return [item.strip() for item in normalized.split(",") if item.strip()]
 
 
 @lru_cache()
