@@ -103,7 +103,7 @@ npm run dev -- --hostname 0.0.0.0 --port 3000
 
 ### 一键本地开发脚本
 
-如果你已经准备好 `.env` 并安装了 Python/Node 依赖，可以使用脚本一次性启动后端与前端（默认端口 8000/3000）：
+脚本会自动复制缺失的 `.env`（根目录与 `frontend`）并安装后端依赖；你可以直接运行命令一次性启动后端与前端（默认端口 8000/3000）：
 
 ```bash
 ./scripts/run_fullstack.sh
@@ -111,6 +111,8 @@ npm run dev -- --hostname 0.0.0.0 --port 3000
 
 脚本会自动：
 
+- 检查 `.env` / `frontend/.env` 是否存在，如果缺失则从对应的 `.env.example` 复制；
+- 安装 Python 后端依赖（`pip install -e backend`，仅首次运行需要安装）；
 - 读取根目录 `.env` 以获得数据库、工作区根目录、CORS 以及 `NEXT_PUBLIC_API_BASE` 配置；
 - 在后台启动 `uvicorn backend.app.main:app`；
 - 如果还没有 `frontend/node_modules`，会先执行 `npm install`；
