@@ -23,6 +23,12 @@ async def run_coding_session(
     features = load_features(root)
     target = choose_target_feature(features, session.feature_id)
 
+    append_progress_entry(
+        root,
+        "CodingAgent",
+        f"Starting session for {target.id}: {target.description}",
+    )
+
     recent_progress = "\n".join(latest_entries(root, limit=5))
     commits = "\n".join(get_recent_commits(root, limit=3))
     memories = "\n".join(memory_store.query(k=3)) if memory_store else "(memory disabled)"

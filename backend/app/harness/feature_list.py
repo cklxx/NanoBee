@@ -18,10 +18,26 @@ FEATURE_FILE = "feature_list.json"
 
 
 def default_features(goal: str) -> List[Feature]:
+    del goal  # the fallback list is intentionally goal-agnostic
     return [
-        Feature("feat_add_item", "User can add a todo item", "failing"),
-        Feature("feat_view_items", "User can view todo items", "failing"),
-        Feature("feat_toggle_item", "User can toggle completion", "failing"),
+        Feature(
+            "feat_fibonacci_endpoint",
+            "Expose a GET /fib/{n} endpoint that returns the nth Fibonacci number as JSON",
+            "failing",
+            "TODO: ensure handler wiring stays in sync with FastAPI app startup",
+        ),
+        Feature(
+            "feat_input_validation",
+            "Reject invalid or overly large inputs with helpful 400 responses",
+            "failing",
+            "TODO: extend validation rules based on product requirements",
+        ),
+        Feature(
+            "feat_caching",
+            "Cache Fibonacci computations and surface cache hits for repeat requests",
+            "failing",
+            "TODO: add metrics/export cache stats for observability",
+        ),
     ]
 
 
@@ -31,6 +47,33 @@ def load_features(root: Path) -> List[Feature]:
         return []
     data = json.loads(path.read_text(encoding="utf-8"))
     return [Feature(**item) for item in data]
+
+
+def features_from_json(payload: str) -> List[Feature]:
+    data = json.loads(payload)
+    if not isinstance(data, list):
+        raise ValueError("feature_list.json must be an array")
+
+    parsed: List[Feature] = []
+    for idx, item in enumerate(data):
+        if not isinstance(item, dict):
+            raise ValueError(f"feature_list entry at index {idx} is not an object")
+
+        # Enforce required fields and normalize types
+        try:
+            fid = str(item["id"])
+            description = str(item["description"])
+        except KeyError as exc:  # pragma: no cover - defensive guardrail
+            raise ValueError("feature entries must include id and description") from exc
+
+        status = str(item.get("status", "failing"))
+        # At initialization all statuses must be failing.
+        normalized_status = "failing" if status != "passing" else "failing"
+        notes = str(item.get("notes", ""))
+
+        parsed.append(Feature(fid, description, normalized_status, notes))
+
+    return parsed
 
 
 def save_features(root: Path, features: List[Feature]) -> None:

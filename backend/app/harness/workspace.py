@@ -13,6 +13,14 @@ def ensure_workspace(ws: WorkspaceConfig) -> Path:
     return root
 
 
+def is_workspace_initialized(root: Path | WorkspaceConfig) -> bool:
+    """Check whether the key harness files exist for a workspace."""
+
+    base_path = root if isinstance(root, Path) else Path(root.root_dir)
+    required = ["init.sh", "feature_list.json", "progress.log"]
+    return all((base_path / name).exists() for name in required)
+
+
 def list_workspace_files(ws: WorkspaceConfig) -> List[str]:
     root = Path(ws.root_dir)
     files: List[str] = []
