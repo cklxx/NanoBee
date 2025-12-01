@@ -567,25 +567,35 @@ async def stream_progress(task_id: str, request: Request, db: Session = Depends(
 
     async def event_generator():
         last_payload = None
-        if log_path.exists():
-            last_payload = log_path.read_text(encoding="utf-8")
-            yield f"data: {json.dumps({'progress': last_payload})}\n\n"
-        else:
-            last_payload = ""
-            yield f"data: {json.dumps({'progress': last_payload})}\n\n"
+        heartbeat = 0
+
+        def read_log() -> str:
+            try:
+                return log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+            except OSError:
+                return ""
+
+        last_payload = read_log()
+        yield f"data: {json.dumps({'progress': last_payload})}\n\n"
 
         while True:
             if await request.is_disconnected():
                 break
 
-            current = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+            current = read_log()
             if current != last_payload:
                 last_payload = current
                 yield f"data: {json.dumps({'progress': current})}\n\n"
 
+            heartbeat += 1
+            if heartbeat >= 15:
+                heartbeat = 0
+                yield ": keep-alive\n\n"
+
             await asyncio.sleep(1)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
 
 @router.get("/{task_id}/evals")
