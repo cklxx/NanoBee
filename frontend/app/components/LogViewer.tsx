@@ -12,25 +12,76 @@ export function LogViewer({ taskId, apiBase, initialLog = "" }: LogViewerProps) 
   const [log, setLog] = useState(initialLog);
 
   useEffect(() => {
-    const source = new EventSource(`${apiBase}/api/tasks/${taskId}/progress/stream`);
+    let source: EventSource | null = null;
+    let pollHandle: ReturnType<typeof setInterval> | null = null;
+    let retryHandle: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
 
-    source.onmessage = (event) => {
+    const fetchProgress = async () => {
       try {
-        const parsed = JSON.parse(event.data);
-        if (typeof parsed.progress === "string") {
-          setLog(parsed.progress);
+        const res = await fetch(`${apiBase}/api/tasks/${taskId}/progress`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data.progress === "string") {
+          setLog(data.progress);
         }
       } catch (err) {
-        console.error("Failed to parse progress update", err);
+        console.error("Failed to poll progress", err);
       }
     };
 
-    source.onerror = (err) => {
-      console.error("Progress stream error", err);
+    const startPolling = () => {
+      if (pollHandle) return;
+      // Keep the UI updating even if streaming fails.
+      fetchProgress();
+      pollHandle = setInterval(fetchProgress, 3000);
     };
 
+    const startStream = () => {
+      if (source) return;
+
+      source = new EventSource(`${apiBase}/api/tasks/${taskId}/progress/stream`);
+
+      source.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (typeof parsed.progress === "string") {
+            setLog(parsed.progress);
+          }
+        } catch (err) {
+          console.error("Failed to parse progress update", err);
+        }
+      };
+
+      source.onerror = (err) => {
+        console.error("Progress stream error, falling back to polling", err);
+        source?.close();
+        source = null;
+        if (!stopped) {
+          startPolling();
+          if (!retryHandle) {
+            retryHandle = setTimeout(() => {
+              retryHandle = null;
+              if (!stopped) {
+                startStream();
+              }
+            }, 10000);
+          }
+        }
+      };
+    };
+
+    startStream();
+
     return () => {
-      source.close();
+      stopped = true;
+      source?.close();
+      if (pollHandle) {
+        clearInterval(pollHandle);
+      }
+      if (retryHandle) {
+        clearTimeout(retryHandle);
+      }
     };
   }, [apiBase, taskId]);
 
