@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -17,7 +20,7 @@ from ..harness.runner import run_coding_session, run_full_workflow, run_initiali
 from ..harness.evaluation import EvalOutcome, evaluate_task_result, persist_eval_result
 from ..harness.feature_list import all_features_passing, load_features
 from ..harness.memory import MemoryStore
-from ..harness.progress_log import read_progress_log
+from ..harness.progress_log import PROGRESS_FILE, read_progress_log
 from ..harness.workspace import ensure_workspace
 from ..llm.base import LLMClient
 
@@ -549,6 +552,40 @@ def get_progress(task_id: str, db: Session = Depends(deps.get_db)) -> dict:
         raise HTTPException(status_code=404, detail="Workspace not found")
     log = read_progress_log(Path(workspace.root_dir))
     return {"progress": log}
+
+
+@router.get("/{task_id}/progress/stream")
+async def stream_progress(task_id: str, request: Request, db: Session = Depends(deps.get_db)) -> StreamingResponse:
+    task = db.get(models.Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    workspace = db.get(models.Workspace, task.workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    log_path = Path(workspace.root_dir) / PROGRESS_FILE
+
+    async def event_generator():
+        last_payload = None
+        if log_path.exists():
+            last_payload = log_path.read_text(encoding="utf-8")
+            yield f"data: {json.dumps({'progress': last_payload})}\n\n"
+        else:
+            last_payload = ""
+            yield f"data: {json.dumps({'progress': last_payload})}\n\n"
+
+        while True:
+            if await request.is_disconnected():
+                break
+
+            current = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+            if current != last_payload:
+                last_payload = current
+                yield f"data: {json.dumps({'progress': current})}\n\n"
+
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/{task_id}/evals")

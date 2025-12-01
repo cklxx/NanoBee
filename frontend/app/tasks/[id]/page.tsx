@@ -42,7 +42,7 @@ export default async function TaskDetail({ params }: { params: { id: string } })
         <FeatureTable features={featuresRes.features} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <LogViewer log={progressRes.progress} />
+        <LogViewer taskId={taskId} apiBase={apiBase} initialLog={progressRes.progress} />
         <WorkspaceFileTree files={filesRes.files} />
       </div>
       <EvaluationPanel results={evalsRes.results} />
