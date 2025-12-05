@@ -46,13 +46,13 @@ class PPTWorkflowService:
         if not self.text_provider:
             self.text_provider = DoubaoTextProvider(
                 model=self.settings.default_text_model,
-                base_url=self.settings.default_text_base_url,
+                base_url=self._normalize_url(self.settings.default_text_base_url, "default_text_base_url"),
                 api_key=self.settings.text_api_key,
             )
         if not self.image_provider:
             self.image_provider = SeaDreamImageProvider(
                 model=self.settings.default_image_model,
-                base_url=self.settings.default_image_base_url,
+                base_url=self._normalize_url(self.settings.default_image_base_url, "default_image_base_url"),
                 api_key=self.settings.image_api_key,
             )
 
@@ -87,15 +87,17 @@ class PPTWorkflowService:
         
         try:
             # 使用 DuckDuckGo 进行真实Web搜索
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             
             with DDGS() as ddgs:
                 # 搜索相关结果
-                results = list(ddgs.text(
-                    keywords=f"{request.topic} 研究 分析 报告",
-                    max_results=request.limit,
-                    region='cn-zh',  # 中文地区
-                ))
+                results = list(
+                    ddgs.text(
+                        query=f"{request.topic} 研究 分析 报告",
+                        max_results=request.limit,
+                        region="cn-zh",  # 中文地区
+                    )
+                )
                 
                 for result in results:
                     # 智能判断来源类型
@@ -252,10 +254,9 @@ class PPTWorkflowService:
             if request.image_model
             else self.settings.default_image_model
         )
-        base_url = (
-            request.image_model.base_url
-            if request.image_model
-            else self.settings.default_image_base_url
+        base_url = self._normalize_url(
+            request.image_model.base_url if request.image_model else self.settings.default_image_base_url,
+            "default_image_base_url",
         )
         api_key = (
             request.image_model.api_key
@@ -334,7 +335,12 @@ class PPTWorkflowService:
                     import traceback
                     traceback.print_exc()
             else:
-                print(f"[SeaDream] Provider cannot call - check API key and configuration")
+                if not provider.api_key:
+                    print("[SeaDream] Provider cannot call - missing API key")
+                elif not provider._valid_url(base_url):
+                    print("[SeaDream] Provider cannot call - image base URL missing or invalid. Set NANOBEE_DEFAULT_IMAGE_BASE_URL.")
+                else:
+                    print("[SeaDream] Provider cannot call - check configuration")
         else:
             print(f"[SeaDream] Image provider not configured or no API key")
         
@@ -381,6 +387,17 @@ class PPTWorkflowService:
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&apos;"))
+
+    def _normalize_url(self, url: str | None, field_name: str) -> str:
+        """Ensure URLs are non-empty, falling back to the model default if env provided an empty string."""
+        value = (url or "").strip()
+        if value:
+            return value
+
+        default_field = Settings.model_fields.get(field_name)
+        if default_field and default_field.default:
+            return str(default_field.default)
+        return ""
 
     def _build_image_caption(self, slide: SlideContent, palette: Palette) -> str:
         accent = f"强调色 {palette.accent}" if palette.accent else ""
@@ -458,7 +475,7 @@ class PPTWorkflowService:
             if model:
                 provider = DoubaoTextProvider(
                     model=model.model,
-                    base_url=model.base_url,
+                    base_url=self._normalize_url(model.base_url, "default_text_base_url"),
                     api_key=api_key,
                     client=self.text_provider.client,
                 )

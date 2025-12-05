@@ -17,11 +17,13 @@ class DoubaoTextProvider:
 
     @property
     def can_call(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) and self._valid_url(self.base_url)
 
     def generate(self, prompt: str) -> str:
-        if not self.can_call:
+        if not self.api_key:
             raise RuntimeError("DoubaoTextProvider requires api_key to call")
+        if not self._valid_url(self.base_url):
+            raise RuntimeError("DoubaoTextProvider requires a valid base_url (http/https)")
 
         # 确保使用完整的端点URL
         url = self.base_url
@@ -59,6 +61,10 @@ class DoubaoTextProvider:
             return self.client
         return httpx.Client()
 
+    @staticmethod
+    def _valid_url(url: str | None) -> bool:
+        return bool(url) and str(url).startswith(("http://", "https://"))
+
 
 @dataclass
 class SeaDreamImageProvider:
@@ -71,11 +77,13 @@ class SeaDreamImageProvider:
 
     @property
     def can_call(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) and self._valid_url(self.base_url)
 
     def generate(self, prompt: str, watermark: bool) -> str:
-        if not self.can_call:
+        if not self.api_key:
             raise RuntimeError("SeaDreamImageProvider requires api_key to call")
+        if not self._valid_url(self.base_url):
+            raise RuntimeError("SeaDreamImageProvider requires a valid base_url (http/https)")
 
         with self._client() as client:
             response = client.post(
@@ -109,3 +117,7 @@ class SeaDreamImageProvider:
         if self.client:
             return self.client
         return httpx.Client()
+
+    @staticmethod
+    def _valid_url(url: str | None) -> bool:
+        return bool(url) and str(url).startswith(("http://", "https://"))
