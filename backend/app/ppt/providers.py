@@ -87,21 +87,31 @@ class SeaDreamImageProvider:
 
         url = self._ensure_image_endpoint(self.base_url)
 
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "size": "1024x576",
+            "n": 1,
+            "response_format": "b64_json",
+            "watermark": watermark,
+            "sequential_image_generation": "disabled",
+            "stream": False,
+        }
+
         with self._client() as client:
-            response = client.post(
-                url,
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "size": "1024x576",
-                    "n": 1,
-                    "response_format": "b64_json",
-                    "watermark": watermark,
-                },
-                timeout=60,
-            )
-            response.raise_for_status()
+            try:
+                response = client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=payload,
+                    timeout=60,
+                )
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                detail = exc.response.text if exc.response is not None else ""
+                print(f"[SeaDream] HTTP {exc.response.status_code if exc.response else '?'} error: {detail}")
+                raise
+
             data = response.json()
             return self._extract_data_url(data)
 
