@@ -85,9 +85,11 @@ class SeaDreamImageProvider:
         if not self._valid_url(self.base_url):
             raise RuntimeError("SeaDreamImageProvider requires a valid base_url (http/https)")
 
+        url = self._ensure_image_endpoint(self.base_url)
+
         with self._client() as client:
             response = client.post(
-                self.base_url,
+                url,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 json={
                     "model": self.model,
@@ -121,3 +123,11 @@ class SeaDreamImageProvider:
     @staticmethod
     def _valid_url(url: str | None) -> bool:
         return bool(url) and str(url).startswith(("http://", "https://"))
+
+    @staticmethod
+    def _ensure_image_endpoint(url: str) -> str:
+        """Append images/generations if caller passed the API root."""
+        trimmed = url.rstrip("/")
+        if trimmed.endswith("/images/generations"):
+            return trimmed
+        return f"{trimmed}/images/generations"
