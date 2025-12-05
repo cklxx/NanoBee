@@ -23,9 +23,14 @@ class DoubaoTextProvider:
         if not self.can_call:
             raise RuntimeError("DoubaoTextProvider requires api_key to call")
 
+        # 确保使用完整的端点URL
+        url = self.base_url
+        if not url.endswith("/chat/completions"):
+            url = f"{url.rstrip('/')}/chat/completions"
+
         with self._client() as client:
             response = client.post(
-                self.base_url,
+                url,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 json={
                     "model": self.model,
@@ -33,7 +38,7 @@ class DoubaoTextProvider:
                         {"role": "user", "content": prompt},
                     ],
                 },
-                timeout=30,
+                timeout=60,  # 增加超时时间到60秒
             )
             response.raise_for_status()
             data = response.json()

@@ -1,135 +1,146 @@
-# NanoBee Harness
+# NanoBee PPT
 
-该仓库实现了长时运行 Agent 的工程化 harness（受《Effective harnesses for long-running agents》启发），包含 initializer + coding agent、workspace/git 管理与演示后端。
+AI 驱动的 PPT 生成工具，通过智能搜索、大纲生成、内容创作和图像生成，快速创建专业的演示文稿。
 
-## 快速了解
-- 后端：FastAPI + 自定义 harness 组件（workspace、initializer、coding agent、LLM 抽象等）。
-- 当前 Demo：可通过 `python -m backend.app.harness.runner` 运行模拟任务。
-- 详情请查看项目说明与任务清单：[`PROJECT_BRIEF.md`](./PROJECT_BRIEF.md)。
+## ✨ 功能特点
 
-## 配置
+- 🔍 **智能搜索** - DuckDuckGo真实Web搜索 + LLM知识生成
+- 📋 **大纲生成** - 自动规划PPT结构和章节
+- ✍️ **内容创作** - AI生成每页标题、要点和配色方案
+- 🎨 **图像生成** - SeaDream 4.5生成整页PPT视觉效果
+- 💾 **项目管理** - 浏览器本地保存，支持多项目管理
+- 📄 **PDF导出** - 一键导出为PDF文件
 
-- 复制 `.env.example` 到 `.env` 并按需修改：数据库位置、工作区目录、可选的 OpenAI Key、前端 API 基址。
-- 如果需要对接兼容的 OpenAI 接口或切换模型，可设置 `NANOBEE_OPENAI_BASE_URL` 与 `NANOBEE_OPENAI_MODEL`。
-- 如果前端与后端运行在不同端口，请设置 `NANOBEE_CORS_ORIGINS`（逗号分隔）允许前端来源访问。
+## 🚀 快速开始
 
-## API 快速上手
+### 1. 配置环境
 
-本地运行 FastAPI：
-
-```bash
-uvicorn backend.app.main:app --reload
-```
-
-主要接口：
-- `POST /api/tasks`：创建任务与 workspace 记录。
-- `POST /api/tasks/{task_id}/run/init`：触发 initializer agent。
-- `POST /api/tasks/{task_id}/run/coding`：运行一次 coding session。
-- `POST /api/tasks/{task_id}/run/coding/all`：连续运行多次 coding session，直到所有 feature 通过或达到上限。
-- `POST /api/tasks/{task_id}/evaluate`：运行 Eval Agent，生成评测结果。
-- `GET /api/tasks`、`GET /api/tasks/{task_id}`：查询任务。
-- `GET /api/workspaces/{workspace_id}/files`：列出 workspace 文件。
-- `GET /api/tasks/{task_id}/events`：查看任务事件（占位，后续丰富 payload）。
-- `GET /api/tasks/{task_id}/features`：返回 feature_list.json 的解析内容。
-- `GET /api/tasks/{task_id}/progress`：返回 progress.log 内容。
-- `GET /api/tasks/{task_id}/evals`：返回历史评测。
-
-### 端到端 Demo（本地 SQLite + Dummy LLM）
-
-1) 安装后端依赖：
+复制 `.env.example` 到 `.env` 并配置必需的API密钥：
 
 ```bash
-pip install -e ./backend
+cp .env.example .env
 ```
 
-2) 启动 API：
+编辑 `.env` 文件：
 
 ```bash
-uvicorn backend.app.main:app --reload
+# 必需配置
+NANOBEE_TEXT_API_KEY=你的文本生成API密钥
+NANOBEE_IMAGE_API_KEY=你的图像生成API密钥
+
+# 可选配置（使用默认值即可）
+NANOBEE_DEFAULT_TEXT_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+NANOBEE_DEFAULT_IMAGE_BASE_URL=你的SeaDream API地址
 ```
 
-3) 在另一个终端调用接口跑通完整链路（初始化 + 连续 Coding）：
+### 2. 启动服务
 
-```bash
-# 创建任务（会同时创建 workspace 目录）
-curl -X POST http://localhost:8000/api/tasks -H 'Content-Type: application/json' \
-  -d '{"goal":"build a tiny todo app"}'
-
-# 假设返回 id 为 task-...，触发 initializer
-curl -X POST http://localhost:8000/api/tasks/task-<id>/run/init
-
-# 触发一次 coding session（Dummy LLM 会跑本地 tests）
-curl -X POST http://localhost:8000/api/tasks/task-<id>/run/coding/all
-
-# 查看事件时间线
-curl http://localhost:8000/api/tasks/task-<id>/events
-
-# 触发评测
-curl -X POST http://localhost:8000/api/tasks/task-<id>/evaluate
-```
-
-### 前端控制台（Next.js）
-
-前端使用 Next.js 14 + Tailwind，默认从 `NEXT_PUBLIC_API_BASE` 读取后端地址（见 `.env.example`）。
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-页面：
-
-- `/`：任务列表。
-- `/tasks/[id]`：任务详情，包括 Timeline、Features、Files、Progress、Evaluation，并提供按钮触发 initializer / coding(all) / evaluation API。
-
-### 端到端（E2E）测试
-
-仓库内提供基于 Playwright 的端到端测试用例，会自动同时启动 FastAPI 后端与 Next.js 前端（使用 `scripts/run_fullstack.sh`）。
-
-```bash
-cd frontend
-npm install
-npx playwright install --with-deps  # 首次运行需要安装浏览器
-npm run test:e2e
-```
-
-可以通过设置环境变量自定义端口，例如 `BACKEND_PORT=8100 FRONTEND_PORT=3100 npm run test:e2e`。
-
-### 全链路本地运行（后端 + 前端）
-
-1) 准备环境：复制 `.env.example` 到 `.env`，必要时调整数据库路径、工作区目录、CORS 来源与 API Base。
-2) 启动后端：
-
-```bash
-uvicorn backend.app.main:app --reload --port 8000
-```
-
-3) 启动前端（新终端）：
-
-```bash
-cd frontend
-npm install
-npm run dev -- --hostname 0.0.0.0 --port 3000
-```
-
-4) 打开浏览器访问 `http://localhost:3000`，通过 UI 创建任务、运行 initializer / coding-all / evaluation，并在时间线、Feature 表、文件树与 Progress/Evaluation 面板查看实时结果。
-
-### 一键本地开发脚本
-
-脚本会自动复制缺失的 `.env`（根目录与 `frontend`）并安装后端依赖；你可以直接运行命令一次性启动后端与前端（默认端口 8000/3000）：
+使用一键启动脚本：
 
 ```bash
 ./scripts/run_fullstack.sh
 ```
 
-脚本会自动：
+该脚本会自动：
+- 安装后端依赖
+- 启动后端API（端口8000）
+- 安装前端依赖
+- 启动前端开发服务器（端口3000）
 
-- 检查 `.env` / `frontend/.env` 是否存在，如果缺失则从对应的 `.env.example` 复制；
-- 安装 Python 后端依赖（`pip install -e backend`，仅首次运行需要安装）；
-- 读取根目录 `.env` 以获得数据库、工作区根目录、CORS 以及 `NEXT_PUBLIC_API_BASE` 配置；
-- 在后台启动 `uvicorn backend.app.main:app`；
-- 如果还没有 `frontend/node_modules`，会先执行 `npm install`；
-- 在前台启动 Next.js dev server，并把 `NEXT_PUBLIC_API_BASE` 默认指向后端端口。
+### 3. 使用
 
-当你停止脚本（`Ctrl+C`）时，后台的后端进程也会自动退出。
+打开浏览器访问 `http://localhost:3000`，按照界面提示：
+
+1. **输入主题** - 设置PPT主题和风格
+2. **搜索参考资料** - 自动搜索权威参考来源
+3. **生成大纲** - AI规划PPT结构（可预览）
+4. **生成内容** - 为每页生成详细内容（可预览）
+5. **生成页面** - 使用SeaDream生成视觉效果
+6. **导出PDF** - 下载最终的PPT文档
+
+## 📁 项目结构
+
+```
+NanoBee/
+├── backend/           # FastAPI后端
+│   ├── app/
+│   │   ├── api/      # API路由
+│   │   ├── ppt/      # PPT生成核心
+│   │   └── config.py # 配置管理
+│   └── tests/        # 后端测试
+├── frontend/         # Next.js前端
+│   ├── app/          # 页面和组件
+│   └── public/       # 静态资源
+├── scripts/          # 辅助脚本
+└── .env.example      # 环境变量示例
+```
+
+## 🔧 API接口
+
+主要端点：
+
+- `POST /api/ppt/search` - 搜索参考资料
+- `POST /api/ppt/outline` - 生成PPT大纲
+- `POST /api/ppt/slides` - 生成每页内容
+- `POST /api/ppt/images` - 生成PPT页面图像
+- `GET /api/ppt/prompts` - 查看Prompt记录
+
+## 🛠️ 开发
+
+### 仅启动后端
+
+```bash
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+### 仅启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev -- --port 3000
+```
+
+### 运行测试
+
+```bash
+# 后端测试
+pip install -e ./backend
+pytest backend/tests
+
+# 前端测试
+cd frontend
+npm install
+npm run test:e2e
+```
+
+## 📋 环境变量说明
+
+详细配置请查看 [`ENV_VARIABLES.md`](./ENV_VARIABLES.md)
+
+### 必需配置
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `NANOBEE_TEXT_API_KEY` | 文本生成API密钥 | `sk-xxx` |
+| `NANOBEE_IMAGE_API_KEY` | 图像生成API密钥 | `sk-xxx` |
+
+### 可选配置
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `NANOBEE_WORKSPACES_ROOT` | Prompt笔记保存目录 | `./workspaces` |
+| `NANOBEE_DEFAULT_TEXT_MODEL` | 文本模型名称 | `doubao-seed-1-6-251015` |
+| `NANOBEE_DEFAULT_IMAGE_MODEL` | 图像模型名称 | `doubao-seedream-4-5-251128` |
+| `NANOBEE_CORS_ORIGINS` | CORS允许的源 | `["http://localhost:3000"]` |
+
+## 🎯 技术栈
+
+- **后端**: FastAPI, Python 3.12+
+- **前端**: Next.js 14, React, TypeScript, Tailwind CSS
+- **AI**: 火山引擎豆包（文本）, SeaDream 4.5（图像）
+- **搜索**: DuckDuckGo API
+
+## 📝 许可证
+
+MIT License

@@ -74,40 +74,113 @@ class PPTWorkflowService:
         return PromptNotebookResponse(topic=topic, prompts=prompts)
 
     def generate_references(self, request: SearchRequest) -> SearchResponse:
+        """使用真实Web搜索生成参考资料"""
         notebook = self._notebook(request.topic)
         notebook.save_prompt(
             "search",
             self._build_search_prompt(request),
         )
 
-        template_sources = [
-            ("gov.cn", "政策/标准解读", "官方机构"),
-            ("edu.cn", "高校/研究综述", "研究院校"),
-            ("org", "行业协会白皮书", "行业协会"),
-            ("com", "龙头企业白皮书", "龙头企业"),
-            ("media.cn", "主流媒体深度稿件", "专业媒体"),
-            ("blog.com", "技术社区最佳实践", "社区精选"),
-        ]
-
-        topic_slug = PromptNotebook._slugify(request.topic)
         references: list[ReferenceArticle] = []
-        for idx in range(request.limit):
-            domain, angle, source_label = template_sources[idx % len(template_sources)]
-            url = f"https://{domain}/{topic_slug}?ref={idx + 1}"
-            summary = (
-                f"围绕 {request.topic} 的{angle}，提供可验证的数据点与可用素材。"
-            )
-            references.append(
-                ReferenceArticle(
-                    title=f"{request.topic} · {angle}",
-                    source=source_label,
-                    url=url,
-                    summary=summary,
-                )
-            )
+        
+        try:
+            # 使用 DuckDuckGo 进行真实Web搜索
+            from duckduckgo_search import DDGS
+            
+            with DDGS() as ddgs:
+                # 搜索相关结果
+                results = list(ddgs.text(
+                    keywords=f"{request.topic} 研究 分析 报告",
+                    max_results=request.limit,
+                    region='cn-zh',  # 中文地区
+                ))
+                
+                for result in results:
+                    # 智能判断来源类型
+                    url = result.get('href', '')
+                    source_type = self._determine_source_type(url)
+                    
+                    references.append(
+                        ReferenceArticle(
+                            title=result.get('title', ''),
+                            source=source_type,
+                            url=url,
+                            summary=result.get('body', '')[:100] + '...' if len(result.get('body', '')) > 100 else result.get('body', ''),
+                        )
+                    )
+        except Exception as e:
+            print(f"Web search failed: {e}")
+            # 降级：使用基于规则的参考建议
+            references = self._generate_fallback_references(request)
 
+        if not references:
+            # 最终降级：返回基于规则的参考
+            references = self._generate_fallback_references(request)
+
+        # 按权威性排序
         ranked = self._rank_references(references)
         return SearchResponse(topic=request.topic, references=ranked)
+
+    def _determine_source_type(self, url: str) -> str:
+        """根据URL判断来源类型"""
+        if 'gov.cn' in url or '.gov' in url:
+            return '政府机构'
+        elif 'edu.cn' in url or '.edu' in url:
+            return '教育机构'
+        elif 'scholar.google' in url or 'researchgate' in url or 'arxiv' in url:
+            return '学术论文'
+        elif 'github.com' in url or 'gitlab.com' in url:
+            return '开源社区'
+        elif 'zhihu.com' in url:
+            return '知识社区'
+        elif 'baidu.com' in url:
+            return '综合搜索'
+        else:
+            return '行业资讯'
+
+    def _generate_fallback_references(self, request: SearchRequest) -> list[ReferenceArticle]:
+        """降级方案：使用LLM生成真实参考知识"""
+        references: list[ReferenceArticle] = []
+        
+        # 尝试使用LLM生成有价值的参考知识
+        if self.text_provider and self.text_provider.can_call:
+            try:
+                prompt = (
+                    f"作为专家，为主题'{request.topic}'推荐{request.limit}个最权威的信息来源方向。"
+                    f"对每个方向，说明：1)应该查找什么类型的资料 2)这类资料能提供什么价值。"
+                    f"格式：每行一个，用 | 分隔：资料方向|资料类型|价值说明"
+                )
+                
+                content = self.text_provider.generate(prompt)
+                
+                for line in content.splitlines():
+                    line = line.strip()
+                    if not line or "|" not in line:
+                        continue
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) >= 3:
+                        direction, source_type, value = parts[0], parts[1], parts[2]
+                        # 生成建议性搜索链接
+                        search_query = f"{request.topic} {direction}".replace(" ", "+")
+                        url = f"https://www.google.com/search?q={search_query}"
+                        
+                        references.append(
+                            ReferenceArticle(
+                                title=direction,
+                                source=source_type,
+                                url=url,
+                                summary=value,
+                            )
+                        )
+                
+                if len(references) >= request.limit:
+                    return references[:request.limit]
+                    
+            except Exception as e:
+                print(f"LLM fallback generation failed: {e}")
+        
+        # 如果LLM也失败，返回空列表（而不是假数据）
+        return []
 
     def generate_outline(self, request: OutlineRequest) -> OutlineResponse:
         notebook = self._notebook(request.topic)
@@ -243,12 +316,69 @@ class PPTWorkflowService:
                 api_key=api_key or self.image_provider.api_key,
                 client=self.image_provider.client,
             )
+            print(f"[SeaDream] Attempting to generate image for: {slide.title}")
+            print(f"[SeaDream] Prompt: {prompt}")
+            print(f"[SeaDream] Model: {model}, Base URL: {base_url}")
+            print(f"[SeaDream] API key configured: {bool(api_key or self.image_provider.api_key)}")
+            print(f"[SeaDream] Provider can_call: {provider.can_call}")
+            
             if provider.can_call:
                 try:
-                    return provider.generate(prompt, watermark)
-                except Exception:
-                    pass
-        return self._build_svg_data_url(slide.title, slide.style_prompt, palette)
+                    result = provider.generate(prompt, watermark)
+                    print(f"[SeaDream] Successfully generated image for: {slide.title}")
+                    return result
+                except Exception as e:
+                    print(f"[SeaDream] Failed to generate image: {type(e).__name__}: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[SeaDream] Provider cannot call - check API key and configuration")
+        else:
+            print(f"[SeaDream] Image provider not configured or no API key")
+        
+        print(f"[SeaDream] Falling back to content-based SVG for: {slide.title}")
+        return self._build_content_svg(slide, palette)
+
+    def _build_content_svg(self, slide: SlideContent, palette: Palette) -> str:
+        """生成基于内容的SVG，显示实际的幻灯片内容"""
+        # 构建要点列表的SVG
+        bullets_svg = ""
+        y_offset = 200
+        for i, bullet in enumerate(slide.bullets[:5]):  # 最多显示5个要点
+            # 截断过长的文本
+            text = bullet[:80] + "..." if len(bullet) > 80 else bullet
+            bullets_svg += f"""
+  <circle cx='80' cy='{y_offset + i * 50}' r='4' fill='white' opacity='0.9'/>
+  <text x='100' y='{y_offset + i * 50 + 5}' fill='white' font-family='Arial, sans-serif' font-size='18' opacity='0.95'>{self._escape_xml(text)}</text>"""
+        
+        # 构建完整的SVG
+        svg = f"""
+<svg xmlns='http://www.w3.org/2000/svg' width='960' height='540'>
+  <defs>
+    <linearGradient id='grad' x1='0%' y1='0%' x2='100%' y2='100%'>
+      <stop offset='0%' style='stop-color:{palette.primary};stop-opacity:1' />
+      <stop offset='100%' style='stop-color:{palette.secondary};stop-opacity:1' />
+    </linearGradient>
+  </defs>
+  <rect width='960' height='540' fill='url(#grad)' />
+  <text x='60' y='100' fill='white' font-family='Arial, sans-serif' font-size='42' font-weight='bold'>{self._escape_xml(slide.title)}</text>
+  {bullets_svg}
+  <text x='60' y='510' fill='white' font-family='Arial, sans-serif' font-size='14' opacity='0.6'>{self._escape_xml(slide.keywords)}</text>
+</svg>
+"""
+        import base64
+        encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+        return f"data:image/svg+xml;base64,{encoded}"
+
+    @staticmethod
+    def _escape_xml(text: str) -> str:
+        """转义XML特殊字符"""
+        return (text
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;"))
 
     def _build_image_caption(self, slide: SlideContent, palette: Palette) -> str:
         accent = f"强调色 {palette.accent}" if palette.accent else ""

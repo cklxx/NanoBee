@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         description="Default text model for PPT workflow",
     )
     default_text_base_url: str = Field(
-        default="https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        default="https://ark.cn-beijing.volces.com/api/v3",
         description="Default text model base URL",
     )
     text_api_key: str | None = Field(
