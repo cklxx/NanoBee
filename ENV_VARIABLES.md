@@ -41,7 +41,7 @@ NanoBee 使用环境变量来配置后端和前端服务。所有后端环境变
 | 变量名 | 必填 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `NANOBEE_DEFAULT_IMAGE_MODEL` | 否 | `doubao-seedream-4-5-251128` | 默认图像模型名称，用于 PPT 图片生成 |
-| `NANOBEE_DEFAULT_IMAGE_BASE_URL` | 否 | `https://ark.cn-beijing.volces.com/api/v3/images/generations` | 图像模型 API 基础 URL（images/generations 端点） |
+| `NANOBEE_DEFAULT_IMAGE_BASE_URL` | 否 | `https://ark.cn-beijing.volces.com/api/v3` | 图像模型 API 基础 URL（自动追加 images/generations 端点） |
 | `NANOBEE_IMAGE_API_KEY` | ⚠️ **是** | - | 图像模型 API 密钥，用于调用图像生成服务 |
 | `NANOBEE_ALLOW_IMAGE_WATERMARK` | 否 | `false` | 是否允许 AI 生成图像添加水印 (true/false 或 1/0) |
 
@@ -69,7 +69,7 @@ NANOBEE_TEXT_API_KEY=your_text_api_key_here
 
 # 图像生成配置
 NANOBEE_DEFAULT_IMAGE_MODEL=doubao-seedream-4-5-251128
-NANOBEE_DEFAULT_IMAGE_BASE_URL=https://ark.cn-beijing.volces.com/api/v3/images/generations
+NANOBEE_DEFAULT_IMAGE_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 NANOBEE_IMAGE_API_KEY=your_image_api_key_here
 NANOBEE_ALLOW_IMAGE_WATERMARK=false
 
