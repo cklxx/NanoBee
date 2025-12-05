@@ -47,9 +47,17 @@ export default function GuideVolcenginePage() {
                             在控制台搜索 "火山方舟" (Ark)，或直接访问方舟控制台。
                         </p>
                         <ul className="list-disc pl-5 space-y-2 text-slate-600">
-                            <li>点击左侧菜单的 <strong>开通管理</strong></li>
-                            <li>开通 <strong>Doubao-pro-32k</strong> (用于生成文本)</li>
-                            <li>注意：目前 SeaDream 图像生成通常包含在方舟服务中，或需单独申请内测。</li>
+                            <li>点击左侧菜单的 <strong>模型推理 &gt; 在线推理 &gt; 创建推理接入点</strong></li>
+                            <li>文本模型：搜索并选择 <strong>doubao-seed-1.6</strong>，接入点名称需记下或保持默认（如 <code>ep-2024...</code>）。</li>
+                            <li>图像模型：搜索并选择 <strong>doubao-seedream-4.5</strong> （原 SeaDream）。</li>
+                            <li>
+                                <span className="font-semibold text-red-600">重要提示：</span>
+                                本项目默认使用以下公共接入点 ID，如果您的接入点 ID 不同，目前需手动修改代码配置：
+                                <ul className="list-disc pl-5 mt-1 text-sm font-mono text-slate-500">
+                                    <li>文本: doubao-seed-1-6-251015</li>
+                                    <li>图像: doubao-seedream-4-5-251128</li>
+                                </ul>
+                            </li>
                         </ul>
                         <a
                             href="https://console.volcengine.com/ark/region:ark+cn-beijing/endpoint"

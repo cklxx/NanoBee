@@ -319,19 +319,6 @@ export default function HomePage() {
                 <p className="text-sm text-slate-500">AI 驱动的 PPT 生成工作流</p>
               </div>
             </div>
-            <ul className="list-disc pl-5 space-y-2 text-slate-600">
-              <li>点击左侧菜单的 <strong>模型推理 &gt; 在线推理 &gt; 创建推理接入点</strong></li>
-              <li>文本模型：搜索并选择 <strong>doubao-pro-32k</strong>，接入点名称需记下或保持默认（如 <code>ep-2024...</code>）。</li>
-              <li>图像模型：搜索并选择 <strong>doubao-seedream-4.5</strong> （原 SeaDream）。</li>
-              <li>
-                <span className="font-semibold text-red-600">重要提示：</span>
-                本项目默认使用以下公共接入点 ID，如果您的接入点 ID 不同，目前需手动修改代码配置：
-                <ul className="list-disc pl-5 mt-1 text-sm font-mono text-slate-500">
-                  <li>文本: doubao-seed-1-6-251015</li>
-                  <li>图像: doubao-seedream-4-5-251128</li>
-                </ul>
-              </li>
-            </ul>
             {/* 项目管理按钮 */}
             <div className="flex gap-2">
               <Button
@@ -531,6 +518,29 @@ export default function HomePage() {
               )}
             </CardContent>
           </Card>
+          {/* API Key 设置 */}
+          <div className="p-4 border-t border-slate-200 bg-white sticky bottom-0">
+            <Label className="text-xs font-semibold text-slate-500 mb-2 block">
+              自定义 API Key (可选)
+            </Label>
+            <Input
+              type="password"
+              placeholder="sk-..."
+              value={apiKey}
+              onChange={(e) => handleApiKeyChange(e.target.value)}
+              className="mb-2 text-xs h-8"
+            />
+            <div className="flex justify-between items-center text-[10px] text-slate-400">
+              <span>共用于 Doubao/SeaDream</span>
+              <Link
+                href="/guide/volcengine"
+                target="_blank"
+                className="text-blue-500 hover:underline flex items-center gap-1"
+              >
+                ❓ 如何获取 Key
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -790,29 +800,7 @@ export default function HomePage() {
             </div>
           </div>
         )}
-        {/* API Key 设置 */}
-        <div className="p-4 border-t border-slate-200 bg-white sticky bottom-0">
-          <Label className="text-xs font-semibold text-slate-500 mb-2 block">
-            自定义 API Key (可选)
-          </Label>
-          <Input
-            type="password"
-            placeholder="sk-..."
-            value={apiKey}
-            onChange={(e) => handleApiKeyChange(e.target.value)}
-            className="mb-2 text-xs h-8"
-          />
-          <div className="flex justify-between items-center text-[10px] text-slate-400">
-            <span>共用于 Doubao/SeaDream</span>
-            <Link
-              href="/guide/volcengine"
-              target="_blank"
-              className="text-blue-500 hover:underline flex items-center gap-1"
-            >
-              ❓ 如何获取 Key
-            </Link>
-          </div>
-        </div>
+
       </div>
     </div>
   );
