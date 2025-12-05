@@ -88,10 +88,14 @@ class SlidesResponse(BaseModel):
 class SlideImage(BaseModel):
     title: str
     style_seed: str
-    data_url: str
     model: str
     base_url: str
     watermark: bool
+    url: Optional[str] = Field(default=None, description="Publicly accessible image URL or data URL")
+    data_url: Optional[str] = Field(
+        default=None,
+        description="Legacy data URL (base64 or SVG). May be omitted when a public URL is returned.",
+    )
 
 
 class ImagesRequest(BaseModel):

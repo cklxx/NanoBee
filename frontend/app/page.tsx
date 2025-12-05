@@ -41,9 +41,12 @@ interface SlideContent {
 
 interface SlideImage {
   title: string;
-  data_url: string;
   style_seed: string;
   model: string;
+  base_url?: string;
+  watermark?: boolean;
+  url?: string;
+  data_url?: string;
 }
 
 const MAX_SAVED_PROJECTS = 10;
@@ -254,7 +257,7 @@ export default function HomePage() {
     }
   };
 
-  const runSlides = async () => {
+  const runSlides = async (): Promise<SlideContent[]> => {
     if (!outline.length) await runOutline();
     setBusy("slides");
     pushStatus(`正在生成每页PPT内容...`);
@@ -275,33 +278,84 @@ export default function HomePage() {
       const data = await response.json();
       setSlides(data.slides || []);
       pushStatus(`✓ 生成了 ${data.slides?.length || 0} 页幻灯片`);
+      return data.slides || [];
     } catch (error: any) {
       pushStatus(`✗ 幻灯片生成失败: ${error.message}`);
+      return [];
     } finally {
       setBusy(null);
     }
   };
 
   const runImages = async () => {
-    if (!slides.length) await runSlides();
+    const slidesToUse = slides.length ? slides : await runSlides();
+    if (!slidesToUse.length) {
+      pushStatus("✗ 没有可生成图片的幻灯片");
+      return;
+    }
     setBusy("images");
     pushStatus(`调用 SeaDream 生成 PPT 页面，这可能需要一些时间...`);
-    try {
-      const response = await fetch(`${apiBase}/api/ppt/images`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic,
-          slides,
-          watermark: false,
-          session_id: sessionId,
-          image_model: apiKey ? { model: "doubao-seedream-4-5-251128", base_url: "", api_key: apiKey } : undefined
-        }),
+
+    const upsertImage = (img: SlideImage) => {
+      setSlideImages((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex((i) => i.title === img.title);
+        if (idx >= 0) next[idx] = { ...next[idx], ...img };
+        else next.push(img);
+        return next;
       });
-      if (!response.ok) throw new Error(`PPT 页面生成失败: ${response.statusText}`);
-      const data = await response.json();
-      setSlideImages(data.images || []);
-      pushStatus(`✓ 成功生成 ${data.images?.length || 0} 页 PPT 视觉效果`);
+    };
+
+    const generateImageForSlide = async (slide: SlideContent): Promise<SlideImage | null> => {
+      const body = {
+        topic,
+        slides: [slide],
+        watermark: false,
+        session_id: sessionId,
+        image_model: apiKey ? { model: "doubao-seedream-4-5-251128", base_url: "", api_key: apiKey } : undefined,
+      };
+      try {
+        const response = await fetch(`${apiBase}/api/ppt/images`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) throw new Error(response.statusText);
+        const data = await response.json();
+        const image: SlideImage | undefined = data.images?.[0];
+        return image || null;
+      } catch (err: any) {
+        pushStatus(`✗ 图片生成失败（${slide.title}）：${err.message || err}`);
+        return null;
+      }
+    };
+
+    try {
+      // 先生成首张，避免空白占位。
+      if (slidesToUse.length > 0) {
+        const firstImage = await generateImageForSlide(slidesToUse[0]);
+        if (firstImage) {
+          upsertImage(firstImage);
+          pushStatus(`✓ 首张图片完成：${slidesToUse[0].title}`);
+        }
+      }
+
+      // 剩余图片并发生成。
+      const remaining = slidesToUse.slice(1);
+      if (remaining.length) {
+        pushStatus(`并发生成剩余 ${remaining.length} 张图片...`);
+        const results = await Promise.allSettled(remaining.map(generateImageForSlide));
+        let successCount = 0;
+        results.forEach((res, idx) => {
+          if (res.status === "fulfilled" && res.value) {
+            successCount += 1;
+            upsertImage(res.value);
+          } else if (res.status === "rejected") {
+            pushStatus(`✗ 图片生成失败（${remaining[idx].title}）：${res.reason}`);
+          }
+        });
+        pushStatus(`✓ 已生成 ${successCount}/${remaining.length} 张图片`);
+      }
     } catch (error: any) {
       pushStatus(`✗ PPT 页面生成失败: ${error.message}`);
     } finally {
@@ -309,24 +363,47 @@ export default function HomePage() {
     }
   };
 
-  const downloadPdf = () => {
+  const fetchImageDataUrl = async (image: SlideImage): Promise<string | null> => {
+    if (image.data_url) return image.data_url;
+    if (!image.url) return null;
+    try {
+      const res = await fetch(image.url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    } catch (err) {
+      console.error("Failed to fetch image data URL", err);
+      return null;
+    }
+  };
+
+  const downloadPdf = async () => {
     if (!slides.length) return;
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-    slides.forEach((slide, idx) => {
+    for (let idx = 0; idx < slides.length; idx++) {
+      const slide = slides[idx];
       if (idx !== 0) doc.addPage();
       doc.setFontSize(24);
       doc.text(slide.title, 60, 80);
       doc.setFontSize(14);
       slide.bullets.forEach((b, i) => doc.text(`• ${b}`, 80, 130 + i * 24));
       const image = slideImages.find((img) => img.title === slide.title);
-      if (image?.data_url) {
-        try {
-          doc.addImage(image.data_url, "PNG", 400, 90, 320, 180);
-        } catch (e) {
-          console.error("Failed to add image to PDF", e);
+      if (image) {
+        const dataUrl = await fetchImageDataUrl(image);
+        if (dataUrl) {
+          try {
+            doc.addImage(dataUrl, "PNG", 400, 90, 320, 180);
+          } catch (e) {
+            console.error("Failed to add image to PDF", e);
+          }
         }
       }
-    });
+    }
     doc.save(`${topic}.pdf`);
     pushStatus("✓ PDF 已导出");
   };
@@ -602,17 +679,17 @@ export default function HomePage() {
 
               {/* PPT内容区 */}
               <div className="relative flex-1 mx-4 aspect-video shadow-xl animate-fade-in">
-                <div
-                  className="absolute inset-0 rounded-2xl shadow-2xl overflow-hidden"
-                  style={{ backgroundColor: currentSlide?.palette?.primary || "#0f172a" }}
-                >
-                  {currentImage?.data_url ? (
-                    <img
-                      src={currentImage.data_url}
-                      alt={currentSlide?.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
+              <div
+                className="absolute inset-0 rounded-2xl shadow-2xl overflow-hidden"
+                style={{ backgroundColor: currentSlide?.palette?.primary || "#0f172a" }}
+              >
+                {currentImage?.url || currentImage?.data_url ? (
+                  <img
+                    src={currentImage.url || currentImage.data_url || ""}
+                    alt={currentSlide?.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <div className="text-center space-y-4 p-12">
                         <h2 className="text-5xl font-bold text-white">{currentSlide?.title}</h2>
@@ -654,8 +731,8 @@ export default function HomePage() {
                         }`}
                       style={{ backgroundColor: slide.palette?.primary || "#0f172a" }}
                     >
-                      {img?.data_url ? (
-                        <img src={img.data_url} alt={slide.title} className="w-full h-full object-cover" />
+                      {img?.url || img?.data_url ? (
+                        <img src={img?.url || img?.data_url || ""} alt={slide.title} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full p-3 flex flex-col justify-between">
                           <p className="text-white text-xs font-semibold line-clamp-2">{slide.title}</p>
