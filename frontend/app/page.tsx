@@ -45,6 +45,8 @@ interface SlideImage {
   model: string;
 }
 
+const MAX_SAVED_PROJECTS = 10;
+
 export default function HomePage() {
   const [topic, setTopic] = React.useState("人工智能发展历史");
   const [stylePrompt, setStylePrompt] = React.useState("简洁商务 · 大胆配色 · 几何元素");
@@ -141,7 +143,11 @@ export default function HomePage() {
       references,
       outline,
       slides,
-      slideImages,
+      // Avoid blowing up localStorage with base64 images
+      slideImages: slideImages.map((img) => ({
+        ...img,
+        data_url: "",
+      })),
     };
 
     setSavedProjects(prev => {
@@ -155,7 +161,14 @@ export default function HomePage() {
         // 新增项目
         newProjects = [project, ...prev];
       }
-      localStorage.setItem('nanobee_projects', JSON.stringify(newProjects));
+      newProjects = newProjects.slice(0, MAX_SAVED_PROJECTS);
+      try {
+        localStorage.setItem('nanobee_projects', JSON.stringify(newProjects));
+      } catch (err) {
+        console.warn('Failed to save projects', err);
+        setStatusLog((prevLog) => [`${new Date().toLocaleTimeString()} · ✗ 保存失败：存储空间不足`, ...prevLog].slice(0, 20));
+        return prev;
+      }
       return newProjects;
     });
   };
