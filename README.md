@@ -94,7 +94,7 @@ NANOBEE_IMAGE_API_KEY=你的图像生成API密钥
 
 # 可选配置（使用默认值即可）
 NANOBEE_DEFAULT_TEXT_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-NANOBEE_DEFAULT_IMAGE_BASE_URL=你的SeaDream API地址
+NANOBEE_DEFAULT_IMAGE_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ```
 
 #### 2. 启动服务
@@ -262,4 +262,3 @@ docker-compose logs -f nginx
 ## 📝 许可证
 
 MIT License
-

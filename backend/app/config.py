@@ -35,7 +35,7 @@ class Settings(BaseSettings):
         description="Default image model for PPT workflow",
     )
     default_image_base_url: str = Field(
-        default="https://image.wodcoai.com/",
+        default="https://ark.cn-beijing.volces.com/api/v3",
         description="Default image model base URL",
     )
     image_api_key: str | None = Field(
