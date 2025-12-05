@@ -465,8 +465,20 @@ export default function HomePage() {
         {slideImages.length > 0 ? (
           /* 图片模式 - 最终版本 */
           <>
-            <div className="flex-1 flex items-center justify-center p-4">
-              <div className="relative w-full h-full max-h-[calc(100vh-200px)] aspect-video shadow-xl animate-fade-in">
+            <div className="flex-1 flex items-center justify-between px-8 py-4">
+              {/* 左侧导航按钮 */}
+              <button
+                onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
+                disabled={currentSlideIndex === 0}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg z-10"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              {/* PPT内容区 */}
+              <div className="relative flex-1 mx-4 aspect-video shadow-xl animate-fade-in">
                 <div
                   className="absolute inset-0 rounded-2xl shadow-2xl overflow-hidden"
                   style={{ backgroundColor: currentSlide?.palette?.primary || "#0f172a" }}
@@ -490,27 +502,18 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
-
-                {/* 导航按钮 */}
-                <button
-                  onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
-                  disabled={currentSlideIndex === 0}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setCurrentSlideIndex(Math.min(slides.length - 1, currentSlideIndex + 1))}
-                  disabled={currentSlideIndex === slides.length - 1}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
               </div>
+
+              {/* 右侧导航按钮 */}
+              <button
+                onClick={() => setCurrentSlideIndex(Math.min(slides.length - 1, currentSlideIndex + 1))}
+                disabled={currentSlideIndex === slides.length - 1}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg z-10"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
             </div>
 
             {/* 缩略图导航 */}
@@ -545,8 +548,17 @@ export default function HomePage() {
         ) : slides.length > 0 ? (
           /* 内容模式 - 详细版本 */
           <>
-            <div className="flex-1 flex items-center justify-center p-4">
-              <div className="relative w-full h-full max-h-[calc(100vh-200px)] aspect-video shadow-xl animate-fade-in">
+            <div className="flex-1 flex items-center justify-between px-8 py-4">
+              <button
+                onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
+                disabled={currentSlideIndex === 0}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg z-10"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div className="relative flex-1 mx-4 aspect-video shadow-xl animate-fade-in">
                 <div
                   className="absolute inset-0 rounded-2xl shadow-2xl overflow-hidden p-12 flex flex-col justify-between"
                   style={{
@@ -569,27 +581,16 @@ export default function HomePage() {
                     <span>{currentSlideIndex + 1} / {slides.length}</span>
                   </div>
                 </div>
-
-                {/* 导航按钮 */}
-                <button
-                  onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
-                  disabled={currentSlideIndex === 0}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setCurrentSlideIndex(Math.min(slides.length - 1, currentSlideIndex + 1))}
-                  disabled={currentSlideIndex === slides.length - 1}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
               </div>
+              <button
+                onClick={() => setCurrentSlideIndex(Math.min(slides.length - 1, currentSlideIndex + 1))}
+                disabled={currentSlideIndex === slides.length - 1}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg z-10"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
             </div>
 
             {/* 缩略图导航 */}
@@ -619,8 +620,17 @@ export default function HomePage() {
         ) : outline.length > 0 ? (
           /* 大纲模式 - 结构版本 */
           <>
-            <div className="flex-1 flex items-center justify-center p-4">
-              <div className="relative w-full h-full aspect-video shadow-xl animate-fade-in">
+            <div className="flex-1 flex items-center justify-between px-8 py-4">
+              <button
+                onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
+                disabled={currentSlideIndex === 0}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg z-10"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div className="relative flex-1 mx-4 aspect-video shadow-xl animate-fade-in">
                 <div className="absolute inset-0 rounded-2xl shadow-2xl overflow-hidden bg-gradient-to-br from-slate-600 to-slate-700 p-12">
                   {currentSlideIndex === 0 ? (
                     /* 封面 */
@@ -648,27 +658,16 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
-
-                {/* 导航按钮 */}
-                <button
-                  onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
-                  disabled={currentSlideIndex === 0}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setCurrentSlideIndex(Math.min(outline.length, currentSlideIndex + 1))}
-                  disabled={currentSlideIndex === outline.length}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
               </div>
+              <button
+                onClick={() => setCurrentSlideIndex(Math.min(outline.length, currentSlideIndex + 1))}
+                disabled={currentSlideIndex === outline.length}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 rounded-full p-4 transition shadow-lg z-10"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
             </div>
 
             {/* 缩略图导航 */}

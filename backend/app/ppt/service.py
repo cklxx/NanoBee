@@ -29,6 +29,8 @@ from .schemas import (
 
 MAX_SLIDES = 15
 DEFAULT_PALETTE = Palette(primary="#0f172a", secondary="#6366f1", accent="#f59e0b")
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+
 
 
 @dataclass
@@ -426,16 +428,28 @@ class PPTWorkflowService:
     def _generate_slide_bullets(
         self, request: SlidesRequest, section: OutlineSection
     ) -> list[str]:
-        prompt = (
-            f"主题《{request.topic}》，章节《{section.title}》。"
-            f"参考提示：{request.style_prompt or '商务简洁'}。"
-            "请输出 3-4 条要点，每条不超过 30 字，以 '- ' 开头。"
-        )
+        prompt_file = PROMPTS_DIR / "slide_content.md"
+        if not prompt_file.exists():
+            # Fallback if file not found
+            prompt = (
+                f"主题《{request.topic}》，章节《{section.title}》。"
+                f"参考提示：{request.style_prompt or '商务简洁'}。"
+                "请输出 3-4 条要点，每条不超过 30 字，以 '- ' 开头。"
+            )
+        else:
+            template = prompt_file.read_text(encoding="utf-8")
+            prompt = template.format(
+                topic=request.topic,
+                section_title=section.title,
+                style_prompt=request.style_prompt or '专业商务'
+            )
+
         content = self._maybe_generate_text(prompt)
         if not content:
             return section.bullets
         bullets = [line.lstrip("- ") for line in content.splitlines() if line.strip().startswith("-")]
         return bullets or section.bullets
+
 
     def _maybe_generate_text(self, prompt: str, model: ModelConfig | None = None) -> str | None:
         if self.text_provider:
@@ -549,15 +563,29 @@ class PPTWorkflowService:
     @staticmethod
     def _build_outline_prompt(request: OutlineRequest) -> str:
         refs_block = "\n".join(
-            f"- {ref.rank or idx + 1}. {ref.title} ({ref.source})"
+            f"- {ref.rank or idx + 1}. {ref.title} ({ref.source}): {ref.summary[:100]}"
             for idx, ref in enumerate(request.references)
         )
-        return (
-            f"- 主题: {request.topic}\n"
-            f"- 参考数量: {len(request.references)}\n"
-            f"- 排序参考: \n{refs_block}\n"
-            f"- 最大页数: {MAX_SLIDES}\n"
-        )
+        
+        prompt_file = PROMPTS_DIR / "outline.md"
+        if prompt_file.exists():
+            template = prompt_file.read_text(encoding="utf-8")
+            return template.format(
+                topic=request.topic,
+                ref_count=len(request.references),
+                refs_block=refs_block,
+                max_slides=MAX_SLIDES
+            )
+            
+        # Fallback
+        return f"""请根据以下参考资料，为主题"{request.topic}"生成一个专业、有深度的PPT大纲。
+
+## 参考资料（共{len(request.references)}条）
+{refs_block}
+
+## PPT大纲要求
+请生成{MAX_SLIDES}页的大纲。"""
+
 
     @staticmethod
     def _build_slide_prompt(request: SlidesRequest, references: list[ReferenceArticle]) -> str:

@@ -47,12 +47,12 @@ class Settings(BaseSettings):
         description="Whether downstream image generation should add AI watermarks (disabled by default).",
     )
     workspaces_root: Path = Field(
-        default=Path("/workspace/NanoBee/workspaces"),
+        default=Path("./workspaces"),
         description="Root directory where prompt notebooks and artifacts are stored",
     )
 
     cors_origins: str = Field(
-        default="http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001",
+        default="http://localhost:3000,http://localhost:3001,http://localhost,http://127.0.0.1:3000,http://127.0.0.1:3001",
         description="Allowed CORS origins for the API (comma-separated or JSON list)",
     )
 

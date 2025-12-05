@@ -13,7 +13,71 @@ AI 驱动的 PPT 生成工具，通过智能搜索、大纲生成、内容创作
 
 ## 🚀 快速开始
 
-### 1. 配置环境
+### 方式一：Docker Compose 部署（推荐）
+
+适用于生产环境，服务解耦，易于维护。
+
+#### 1. 配置环境变量
+
+```bash
+cp .env.example .env
+# 编辑 .env 配置 API 密钥
+```
+
+#### 2. 一键启动
+
+```bash
+./docker-start.sh
+```
+
+### 方式二：单容器部署 (All-in-One)
+
+如果您希望仅运行一个 Docker 容器：
+
+```bash
+chmod +x docker-start-aio.sh
+./docker-start-aio.sh
+```
+
+此脚本会构建一个包含 Nginx、前端和后端的单一镜像并运行。
+
+---
+
+### 方式三：开发环境本地运行
+
+#### 3. 访问应用
+
+打开浏览器访问：
+- **前端界面**：`http://localhost`（或服务器 IP 地址）
+- **API 接口**：`http://localhost/api`
+- **健康检查**：`http://localhost/health`
+
+#### 4. 停止服务
+
+```bash
+./docker-stop.sh
+```
+
+#### 腾讯云服务器部署注意事项
+
+1. **安装 Docker**（如未安装）：
+   ```bash
+   curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
+   systemctl start docker
+   systemctl enable docker
+   ```
+
+2. **开放端口**：在腾讯云控制台的安全组中开放 80 端口
+
+3. **首次构建**：可能需要 5-10 分钟，脚本已配置国内镜像源加速
+
+---
+
+### 方式二：开发环境本地运行
+
+适用于开发调试。
+
+#### 1. 配置环境
 
 复制 `.env.example` 到 `.env` 并配置必需的API密钥：
 
@@ -33,7 +97,7 @@ NANOBEE_DEFAULT_TEXT_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 NANOBEE_DEFAULT_IMAGE_BASE_URL=你的SeaDream API地址
 ```
 
-### 2. 启动服务
+#### 2. 启动服务
 
 使用一键启动脚本：
 
@@ -47,7 +111,7 @@ NANOBEE_DEFAULT_IMAGE_BASE_URL=你的SeaDream API地址
 - 安装前端依赖
 - 启动前端开发服务器（端口3000）
 
-### 3. 使用
+#### 3. 使用
 
 打开浏览器访问 `http://localhost:3000`，按照界面提示：
 
@@ -57,6 +121,7 @@ NANOBEE_DEFAULT_IMAGE_BASE_URL=你的SeaDream API地址
 4. **生成内容** - 为每页生成详细内容（可预览）
 5. **生成页面** - 使用SeaDream生成视觉效果
 6. **导出PDF** - 下载最终的PPT文档
+
 
 ## 📁 项目结构
 
@@ -140,7 +205,61 @@ npm run test:e2e
 - **前端**: Next.js 14, React, TypeScript, Tailwind CSS
 - **AI**: 火山引擎豆包（文本）, SeaDream 4.5（图像）
 - **搜索**: DuckDuckGo API
+- **部署**: Docker, Nginx（反向代理）
+
+## 🐳 Docker 部署架构
+
+```
+┌─────────────────────────────────────────┐
+│           Nginx (端口 80)               │
+│      ┌─────────────┬──────────────┐     │
+│      │   /         │    /api/     │     │
+│      └──────┬──────┴──────┬───────┘     │
+└─────────────┼─────────────┼─────────────┘
+              │             │
+        ┌─────▼──────┐ ┌───▼────────┐
+        │  Frontend  │ │  Backend   │
+        │  (3000)    │ │  (8000)    │
+        └────────────┘ └────────────┘
+```
+
+- **Nginx**：作为反向代理统一在 80 端口对外提供服务
+- **Frontend**：Next.js 生产构建（standalone 模式）
+- **Backend**：FastAPI + Uvicorn
+
+## 🔧 常见问题
+
+### Docker 相关
+
+**Q: 构建镜像时速度慢怎么办？**
+- A: 已配置国内镜像源（pip: 清华源, npm: 腾讯云源），首次构建约 5-10 分钟属于正常
+
+**Q: 提示端口 80 被占用？**
+- A: 检查是否有其他服务占用 80 端口，使用 `sudo lsof -i :80` 查看，或修改 `docker-compose.yml` 中的端口映射
+
+**Q: 前端无法访问后端 API？**
+- A: 检查 Nginx 配置是否正确，使用 `docker-compose logs nginx` 查看日志
+
+**Q: 如何查看服务日志？**
+```bash
+# 查看所有服务日志
+docker-compose logs -f
+
+# 查看特定服务
+docker-compose logs -f backend
+docker-compose logs -f frontend
+docker-compose logs -f nginx
+```
+
+### 环境配置
+
+**Q: API 密钥配置错误？**
+- A: 检查 `.env` 文件中的 `NANOBEE_TEXT_API_KEY` 和 `NANOBEE_IMAGE_API_KEY` 是否正确配置
+
+**Q: 图片生成失败？**
+- A: 确认图像 API 地址和密钥配置正确，检查后端日志获取详细错误信息
 
 ## 📝 许可证
 
 MIT License
+

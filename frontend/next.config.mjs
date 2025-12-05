@@ -16,6 +16,7 @@ loadEnvConfig(rootDir);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone', // 优化 Docker 部署，减小镜像大小
 };
 
 export default nextConfig;
