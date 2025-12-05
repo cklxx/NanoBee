@@ -54,6 +54,7 @@ export default function HomePage() {
   const [statusLog, setStatusLog] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [currentSlideIndex, setCurrentSlideIndex] = React.useState(0);
+  const [expandedRefs, setExpandedRefs] = React.useState<Set<number>>(new Set());
 
   // PPT项目管理
   interface SavedProject {
@@ -395,18 +396,28 @@ export default function HomePage() {
               </CardHeader>
               <CardContent className="space-y-2 max-h-64 overflow-y-auto">
                 {references.map((ref, idx) => {
-                  const [expanded, setExpanded] = React.useState(false);
+                  const isExpanded = expandedRefs.has(idx);
+                  const toggleExpand = () => {
+                    const newSet = new Set(expandedRefs);
+                    if (isExpanded) {
+                      newSet.delete(idx);
+                    } else {
+                      newSet.add(idx);
+                    }
+                    setExpandedRefs(newSet);
+                  };
+
                   return (
                     <div
                       key={idx}
                       className="text-sm p-3 rounded bg-slate-50 border border-slate-200 hover:bg-slate-100 transition cursor-pointer"
-                      onClick={() => setExpanded(!expanded)}
+                      onClick={toggleExpand}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="font-medium text-slate-900 flex-1">{ref.title}</p>
                         <Badge variant="outline" className="text-xs flex-shrink-0">{ref.source}</Badge>
                       </div>
-                      {expanded && (
+                      {isExpanded && (
                         <div className="mt-2 pt-2 border-t border-slate-200 space-y-2">
                           <p className="text-xs text-slate-600">{ref.summary}</p>
                           <a
