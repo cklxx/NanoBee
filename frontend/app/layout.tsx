@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NanoBee Harness",
+  title: "NanoBee PPT",
   description: "Control console for the long-running agent harness",
 };
 

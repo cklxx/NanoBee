@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./com
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { Textarea } from "./components/ui/textarea";
+import Link from "next/link";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
@@ -55,6 +56,19 @@ export default function HomePage() {
   const [busy, setBusy] = React.useState<string | null>(null);
   const [currentSlideIndex, setCurrentSlideIndex] = React.useState(0);
   const [expandedRefs, setExpandedRefs] = React.useState<Set<number>>(new Set());
+  const [apiKey, setApiKey] = React.useState(""); // 用户自定义 API Key
+
+  // 加载 API Key
+  React.useEffect(() => {
+    const key = localStorage.getItem('nanobee_api_key');
+    if (key) setApiKey(key);
+  }, []);
+
+  // 保存 API Key
+  const handleApiKeyChange = (value: string) => {
+    setApiKey(value);
+    localStorage.setItem('nanobee_api_key', value);
+  };
 
   // PPT项目管理
   interface SavedProject {
@@ -69,6 +83,7 @@ export default function HomePage() {
   }
 
   const [savedProjects, setSavedProjects] = React.useState<SavedProject[]>([]);
+  const [currentProjectId, setCurrentProjectId] = React.useState<string | null>(null);
   const [showHistory, setShowHistory] = React.useState(false);
 
   // 加载已保存的项目列表
@@ -84,22 +99,58 @@ export default function HomePage() {
   }, []);
 
   // 保存当前项目
-  const saveCurrentProject = () => {
+  // 自动保存逻辑
+  React.useEffect(() => {
+    // 只有当有实质内容时才保存
+    if (!topic && !slides.length) return;
+
+    const timer = setTimeout(() => {
+      saveProject();
+    }, 1000); // 1秒防抖
+
+    return () => clearTimeout(timer);
+  }, [topic, stylePrompt, references, outline, slides, slideImages]);
+
+  const saveProject = () => {
+    const timestamp = Date.now();
+    let id = currentProjectId;
+
+    // 如果没有ID，创建一个新ID
+    if (!id) {
+      // 只有在真的已经在创作时才创建新ID
+      if (topic || slides.length) {
+        id = timestamp.toString();
+        setCurrentProjectId(id);
+      } else {
+        return;
+      }
+    }
+
     const project: SavedProject = {
-      id: Date.now().toString(),
+      id: id!,
       topic,
       stylePrompt,
-      timestamp: Date.now(),
+      timestamp,
       references,
       outline,
       slides,
       slideImages,
     };
 
-    const newProjects = [project, ...savedProjects];
-    setSavedProjects(newProjects);
-    localStorage.setItem('nanobee_projects', JSON.stringify(newProjects));
-    pushStatus(`✓ 已保存项目：${topic}`);
+    setSavedProjects(prev => {
+      const index = prev.findIndex(p => p.id === project.id);
+      let newProjects;
+      if (index >= 0) {
+        // 更新现有项目
+        newProjects = [...prev];
+        newProjects[index] = project;
+      } else {
+        // 新增项目
+        newProjects = [project, ...prev];
+      }
+      localStorage.setItem('nanobee_projects', JSON.stringify(newProjects));
+      return newProjects;
+    });
   };
 
   // 加载已保存的项目
@@ -111,6 +162,7 @@ export default function HomePage() {
     setSlides(project.slides);
     setSlideImages(project.slideImages);
     setCurrentSlideIndex(0);
+    setCurrentProjectId(project.id); // 设置当前项目ID
     setShowHistory(false);
     pushStatus(`✓ 已加载项目：${project.topic}`);
   };
@@ -120,6 +172,9 @@ export default function HomePage() {
     const newProjects = savedProjects.filter(p => p.id !== id);
     setSavedProjects(newProjects);
     localStorage.setItem('nanobee_projects', JSON.stringify(newProjects));
+    if (id === currentProjectId) {
+      setCurrentProjectId(null); // 如果删除了当前项目，重置ID
+    }
     pushStatus('✓ 已删除项目');
   };
 
@@ -154,7 +209,11 @@ export default function HomePage() {
       const response = await fetch(`${apiBase}/api/ppt/outline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, references }),
+        body: JSON.stringify({
+          topic,
+          references,
+          text_model: apiKey ? { model: "doubao-seed-1-6-251015", base_url: "", api_key: apiKey } : undefined
+        }),
       });
       if (!response.ok) throw new Error(`大纲生成失败: ${response.statusText}`);
       const data = await response.json();
@@ -175,7 +234,13 @@ export default function HomePage() {
       const response = await fetch(`${apiBase}/api/ppt/slides`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, outline, references, style_prompt: stylePrompt }),
+        body: JSON.stringify({
+          topic,
+          outline,
+          references,
+          style_prompt: stylePrompt,
+          text_model: apiKey ? { model: "doubao-seed-1-6-251015", base_url: "", api_key: apiKey } : undefined
+        }),
       });
       if (!response.ok) throw new Error(`幻灯片生成失败: ${response.statusText}`);
       const data = await response.json();
@@ -196,7 +261,12 @@ export default function HomePage() {
       const response = await fetch(`${apiBase}/api/ppt/images`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, slides, watermark: false }),
+        body: JSON.stringify({
+          topic,
+          slides,
+          watermark: false,
+          image_model: apiKey ? { model: "doubao-seedream-4-5-251128", base_url: "", api_key: apiKey } : undefined
+        }),
       });
       if (!response.ok) throw new Error(`PPT 页面生成失败: ${response.statusText}`);
       const data = await response.json();
@@ -249,7 +319,19 @@ export default function HomePage() {
                 <p className="text-sm text-slate-500">AI 驱动的 PPT 生成工作流</p>
               </div>
             </div>
-
+            <ul className="list-disc pl-5 space-y-2 text-slate-600">
+              <li>点击左侧菜单的 <strong>模型推理 &gt; 在线推理 &gt; 创建推理接入点</strong></li>
+              <li>文本模型：搜索并选择 <strong>doubao-pro-32k</strong>，接入点名称需记下或保持默认（如 <code>ep-2024...</code>）。</li>
+              <li>图像模型：搜索并选择 <strong>doubao-seedream-4.5</strong> （原 SeaDream）。</li>
+              <li>
+                <span className="font-semibold text-red-600">重要提示：</span>
+                本项目默认使用以下公共接入点 ID，如果您的接入点 ID 不同，目前需手动修改代码配置：
+                <ul className="list-disc pl-5 mt-1 text-sm font-mono text-slate-500">
+                  <li>文本: doubao-seed-1-6-251015</li>
+                  <li>图像: doubao-seedream-4-5-251128</li>
+                </ul>
+              </li>
+            </ul>
             {/* 项目管理按钮 */}
             <div className="flex gap-2">
               <Button
@@ -259,14 +341,7 @@ export default function HomePage() {
               >
                 📚 历史记录 ({savedProjects.length})
               </Button>
-              <Button
-                onClick={saveCurrentProject}
-                disabled={!slides.length}
-                variant="outline"
-                className="flex-1 text-sm"
-              >
-                💾 保存项目
-              </Button>
+
             </div>
           </div>
 
@@ -715,6 +790,29 @@ export default function HomePage() {
             </div>
           </div>
         )}
+        {/* API Key 设置 */}
+        <div className="p-4 border-t border-slate-200 bg-white sticky bottom-0">
+          <Label className="text-xs font-semibold text-slate-500 mb-2 block">
+            自定义 API Key (可选)
+          </Label>
+          <Input
+            type="password"
+            placeholder="sk-..."
+            value={apiKey}
+            onChange={(e) => handleApiKeyChange(e.target.value)}
+            className="mb-2 text-xs h-8"
+          />
+          <div className="flex justify-between items-center text-[10px] text-slate-400">
+            <span>共用于 Doubao/SeaDream</span>
+            <Link
+              href="/guide/volcengine"
+              target="_blank"
+              className="text-blue-500 hover:underline flex items-center gap-1"
+            >
+              ❓ 如何获取 Key
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );
