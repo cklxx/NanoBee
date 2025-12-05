@@ -1,1 +1,1 @@
-"""Backend package for the long-running agent harness."""
+"""Backend package for the PPT workflow API."""

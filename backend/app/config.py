@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Runtime configuration for the PPT workflow API."""
 
     model_config = SettingsConfigDict(
         env_prefix="NANOBEE_",
@@ -17,28 +18,42 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = Field(
-        default=f"sqlite:///{Path(__file__).resolve().parent.parent / 'data.db'}",
-        description="SQLAlchemy database URL",
+    default_text_model: str = Field(
+        default="doubao-seed-1-6-251015",
+        description="Default text model for PPT workflow",
     )
-    openai_api_key: str | None = Field(default=None, description="OpenAI API key (optional)")
-    openai_base_url: str | None = Field(
-        default=None, description="Base URL for the OpenAI-compatible API"
+    default_text_base_url: str = Field(
+        default="https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        description="Default text model base URL",
     )
-    openai_model: str = Field(default="gpt-4o-mini", description="LLM model to use")
+    text_api_key: str | None = Field(
+        default=None,
+        description="API key for calling the default text model provider",
+    )
+    default_image_model: str = Field(
+        default="doubao-seedream-4-5-251128",
+        description="Default image model for PPT workflow",
+    )
+    default_image_base_url: str = Field(
+        default="https://image.wodcoai.com/",
+        description="Default image model base URL",
+    )
+    image_api_key: str | None = Field(
+        default=None,
+        description="API key for calling the default image model provider",
+    )
+    allow_image_watermark: bool = Field(
+        default=False,
+        description="Whether downstream image generation should add AI watermarks (disabled by default).",
+    )
     workspaces_root: Path = Field(
         default=Path("/workspace/NanoBee/workspaces"),
-        description="Root directory where task workspaces are stored",
+        description="Root directory where prompt notebooks and artifacts are stored",
     )
 
     cors_origins: str = Field(
         default="http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001",
         description="Allowed CORS origins for the API (comma-separated or JSON list)",
-    )
-
-    allow_dummy_llm: bool = Field(
-        default=False,
-        description="Allow falling back to DummyLLM when no real LLM is configured (for local demos only).",
     )
 
     @property
