@@ -9,6 +9,7 @@ import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { Textarea } from "./components/ui/textarea";
 import Link from "next/link";
+import { useEffect } from "react";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
@@ -59,12 +60,16 @@ export default function HomePage() {
   const [currentSlideIndex, setCurrentSlideIndex] = React.useState(0);
   const [expandedRefs, setExpandedRefs] = React.useState<Set<number>>(new Set());
   const [apiKey, setApiKey] = React.useState(""); // 用户自定义 API Key
-  const [sessionId, setSessionId] = React.useState<string>(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = React.useState<string | null>(null);
 
-  // 加载 API Key
-  React.useEffect(() => {
+  // 加载 API Key 与会话
+  useEffect(() => {
     const key = localStorage.getItem('nanobee_api_key');
     if (key) setApiKey(key);
+    const savedSession = localStorage.getItem('nanobee_session');
+    const initialSession = savedSession || crypto.randomUUID();
+    setSessionId(initialSession);
+    localStorage.setItem('nanobee_session', initialSession);
   }, []);
 
   // 保存 API Key
@@ -76,6 +81,7 @@ export default function HomePage() {
   const resetSession = () => {
     const next = crypto.randomUUID();
     setSessionId(next);
+    localStorage.setItem('nanobee_session', next);
     pushStatus(`✓ 已切换到新的会话 (${next.slice(0, 8)})`);
   };
 
@@ -182,7 +188,7 @@ export default function HomePage() {
     setSlides(project.slides);
     setSlideImages(project.slideImages);
     setCurrentSlideIndex(0);
-    setSessionId(crypto.randomUUID()); // 新会话，避免历史堆积
+    resetSession(); // 新会话，避免历史堆积
     setCurrentProjectId(project.id); // 设置当前项目ID
     setShowHistory(false);
     pushStatus(`✓ 已加载项目：${project.topic}`);
@@ -345,7 +351,7 @@ export default function HomePage() {
             </div>
             <div className="flex items-center justify-between">
               <Badge variant="secondary" className="text-xs">
-                Session {sessionId.slice(0, 8)}
+                Session {sessionId ? sessionId.slice(0, 8) : ""}
               </Badge>
               <Button size="sm" variant="outline" onClick={resetSession}>
                 新会话
