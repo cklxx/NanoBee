@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
 from ..config import Settings
-from .providers import DoubaoTextProvider, SeaDreamImageProvider
+from .providers import DoubaoTextProvider, ImageResult, SeaDreamImageProvider
 from .prompts import PromptNotebook
 from .schemas import (
     ImagesRequest,
@@ -149,12 +150,16 @@ class PPTWorkflowService:
         # 尝试使用LLM生成有价值的参考知识
         if self.text_provider and self.text_provider.can_call:
             try:
-                prompt = (
-                    f"作为专家，为主题'{request.topic}'推荐{request.limit}个最权威的信息来源方向。"
-                    f"对每个方向，说明：1)应该查找什么类型的资料 2)这类资料能提供什么价值。"
-                    f"格式：每行一个，用 | 分隔：资料方向|资料类型|价值说明"
-                )
-                
+                template = self._load_prompt_template("search_references.md")
+                if template:
+                    prompt = template.format(topic=request.topic, limit=request.limit)
+                else:
+                    prompt = (
+                        f"作为专家，为主题'{request.topic}'推荐{request.limit}个最权威的信息来源方向。"
+                        f"对每个方向，说明：1)应该查找什么类型的资料 2)这类资料能提供什么价值。"
+                        f"格式：每行一个，用 | 分隔：资料方向|资料类型|价值说明"
+                    )
+
                 content = self.text_provider.generate(prompt)
                 
                 for line in content.splitlines():
@@ -271,25 +276,57 @@ class PPTWorkflowService:
 
         base_palette = request.slides[0].palette if request.slides else DEFAULT_PALETTE
         images: list[SlideImage] = []
-        for idx, slide in enumerate(request.slides):
-            palette = slide.palette
-            if idx > 0:
-                palette = Palette(
-                    primary=base_palette.primary,
-                    secondary=base_palette.secondary,
-                    accent=palette.accent,
-                )
-            data_url = self._build_data_url(slide, palette, watermark, model, base_url, api_key)
+
+        def palette_for(idx: int, slide: SlideContent) -> Palette:
+            if idx == 0:
+                return slide.palette
+            return Palette(
+                primary=base_palette.primary,
+                secondary=base_palette.secondary,
+                accent=slide.palette.accent,
+            )
+
+        # First slide sequential to anchor shared palette.
+        if request.slides:
+            first_slide = request.slides[0]
+            first_palette = palette_for(0, first_slide)
+            image_result = self._build_image_result(first_slide, first_palette, watermark, model, base_url, api_key)
             images.append(
                 SlideImage(
-                    title=slide.title,
-                    style_seed=slide.keywords,
-                    data_url=data_url,
+                    title=first_slide.title,
+                    style_seed=first_slide.keywords,
+                    url=image_result.url,
+                    data_url=image_result.data_url,
                     model=model,
                     base_url=base_url,
                     watermark=watermark,
                 )
             )
+
+        def build_image(idx: int, slide: SlideContent) -> tuple[int, SlideImage]:
+            pal = palette_for(idx, slide)
+            image_result = self._build_image_result(slide, pal, watermark, model, base_url, api_key)
+            return idx, SlideImage(
+                title=slide.title,
+                style_seed=slide.keywords,
+                url=image_result.url,
+                data_url=image_result.data_url,
+                model=model,
+                base_url=base_url,
+                watermark=watermark,
+            )
+
+        remaining = list(enumerate(request.slides[1:], start=1))
+        if remaining:
+            max_workers = min(8, len(remaining))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_map = {executor.submit(build_image, idx, slide): idx for idx, slide in remaining}
+                results: dict[int, SlideImage] = {}
+                for future in as_completed(future_map):
+                    idx, slide_image = future.result()
+                    results[idx] = slide_image
+                for idx in sorted(results):
+                    images.append(results[idx])
 
         topic = request.topic or (request.slides[0].title if request.slides else "images")
         notebook = self._notebook(topic, request.session_id)
@@ -302,7 +339,7 @@ class PPTWorkflowService:
     def _notebook(self, topic: str, session_id: str | None = None) -> PromptNotebook:
         return PromptNotebook(root=self.notebook_root, topic=topic, session_id=session_id)
 
-    def _build_data_url(
+    def _build_image_result(
         self,
         slide: SlideContent,
         palette: Palette,
@@ -310,7 +347,7 @@ class PPTWorkflowService:
         model: str,
         base_url: str,
         api_key: str | None,
-    ) -> str:
+    ) -> ImageResult:
         if self.image_provider and (api_key or self.image_provider.api_key):
             prompt = self._build_image_caption(slide, palette)
             provider = SeaDreamImageProvider(
@@ -345,7 +382,8 @@ class PPTWorkflowService:
             print(f"[SeaDream] Image provider not configured or no API key")
         
         print(f"[SeaDream] Falling back to content-based SVG for: {slide.title}")
-        return self._build_content_svg(slide, palette)
+        data_url = self._build_content_svg(slide, palette)
+        return ImageResult(url=data_url, data_url=data_url)
 
     def _build_content_svg(self, slide: SlideContent, palette: Palette) -> str:
         """生成基于内容的SVG，显示实际的幻灯片内容"""
@@ -480,10 +518,27 @@ class PPTWorkflowService:
                     client=self.text_provider.client,
                 )
             if provider.can_call:
+                preview = prompt[:120].replace("\n", " ")
+                print(f"[Doubao] Attempting text generation | model={provider.model} base_url={provider.base_url} can_call={provider.can_call} prompt_preview={preview}")
                 try:
                     return provider.generate(prompt)
-                except Exception:
+                except Exception as exc:
+                    print(f"[Doubao] Text generation failed: {type(exc).__name__}: {exc}")
                     return None
+            else:
+                reason = []
+                if not provider.api_key:
+                    reason.append("missing API key")
+                if not provider._valid_url(provider.base_url):
+                    reason.append("invalid base_url")
+                print(f"[Doubao] Skipping text generation: {', '.join(reason) if reason else 'unknown reason'}")
+        return None
+
+    @staticmethod
+    def _load_prompt_template(filename: str) -> str | None:
+        path = PROMPTS_DIR / filename
+        if path.exists():
+            return path.read_text(encoding="utf-8")
         return None
 
     def _rank_references(self, references: list[ReferenceArticle]) -> list[ReferenceArticle]:
