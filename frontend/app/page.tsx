@@ -57,6 +57,7 @@ export default function HomePage() {
   const [currentSlideIndex, setCurrentSlideIndex] = React.useState(0);
   const [expandedRefs, setExpandedRefs] = React.useState<Set<number>>(new Set());
   const [apiKey, setApiKey] = React.useState(""); // 用户自定义 API Key
+  const [sessionId, setSessionId] = React.useState<string>(() => crypto.randomUUID());
 
   // 加载 API Key
   React.useEffect(() => {
@@ -68,6 +69,12 @@ export default function HomePage() {
   const handleApiKeyChange = (value: string) => {
     setApiKey(value);
     localStorage.setItem('nanobee_api_key', value);
+  };
+
+  const resetSession = () => {
+    const next = crypto.randomUUID();
+    setSessionId(next);
+    pushStatus(`✓ 已切换到新的会话 (${next.slice(0, 8)})`);
   };
 
   // PPT项目管理
@@ -162,6 +169,7 @@ export default function HomePage() {
     setSlides(project.slides);
     setSlideImages(project.slideImages);
     setCurrentSlideIndex(0);
+    setSessionId(crypto.randomUUID()); // 新会话，避免历史堆积
     setCurrentProjectId(project.id); // 设置当前项目ID
     setShowHistory(false);
     pushStatus(`✓ 已加载项目：${project.topic}`);
@@ -188,7 +196,7 @@ export default function HomePage() {
       const response = await fetch(`${apiBase}/api/ppt/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, limit: 6 }),
+        body: JSON.stringify({ topic, limit: 6, session_id: sessionId }),
       });
       if (!response.ok) throw new Error(`搜索失败: ${response.statusText}`);
       const data = await response.json();
@@ -212,6 +220,7 @@ export default function HomePage() {
         body: JSON.stringify({
           topic,
           references,
+          session_id: sessionId,
           text_model: apiKey ? { model: "doubao-seed-1-6-251015", base_url: "", api_key: apiKey } : undefined
         }),
       });
@@ -239,6 +248,7 @@ export default function HomePage() {
           outline,
           references,
           style_prompt: stylePrompt,
+          session_id: sessionId,
           text_model: apiKey ? { model: "doubao-seed-1-6-251015", base_url: "", api_key: apiKey } : undefined
         }),
       });
@@ -265,6 +275,7 @@ export default function HomePage() {
           topic,
           slides,
           watermark: false,
+          session_id: sessionId,
           image_model: apiKey ? { model: "doubao-seedream-4-5-251128", base_url: "", api_key: apiKey } : undefined
         }),
       });
@@ -318,6 +329,14 @@ export default function HomePage() {
                 </h1>
                 <p className="text-sm text-slate-500">AI 驱动的 PPT 生成工作流</p>
               </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <Badge variant="secondary" className="text-xs">
+                Session {sessionId.slice(0, 8)}
+              </Badge>
+              <Button size="sm" variant="outline" onClick={resetSession}>
+                新会话
+              </Button>
             </div>
             {/* 项目管理按钮 */}
             <div className="flex gap-2">

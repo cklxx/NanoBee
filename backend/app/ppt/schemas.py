@@ -23,6 +23,9 @@ class SearchRequest(BaseModel):
     topic: str = Field(..., description="User provided PPT theme")
     limit: int = Field(default=5, ge=1, le=12, description="How many references to surface")
     source_hint: Optional[str] = Field(default=None, description="Optional hint for retrieval channel")
+    session_id: Optional[str] = Field(
+        default=None, description="Session identifier to scope prompt history"
+    )
 
 
 class SearchResponse(BaseModel):
@@ -39,6 +42,9 @@ class OutlineRequest(BaseModel):
     topic: str
     references: List[ReferenceArticle]
     text_model: Optional[ModelConfig] = None
+    session_id: Optional[str] = Field(
+        default=None, description="Session identifier to scope prompt history"
+    )
 
 
 class OutlineResponse(BaseModel):
@@ -70,6 +76,9 @@ class SlidesRequest(BaseModel):
     style_prompt: Optional[str] = None
     references: Optional[List[ReferenceArticle]] = None
     text_model: Optional[ModelConfig] = None
+    session_id: Optional[str] = Field(
+        default=None, description="Session identifier to scope prompt history"
+    )
 
 
 class SlidesResponse(BaseModel):
@@ -92,6 +101,9 @@ class ImagesRequest(BaseModel):
     slides: List[SlideContent]
     image_model: Optional[ModelConfig] = None
     watermark: Optional[bool] = None
+    session_id: Optional[str] = Field(
+        default=None, description="Session identifier to scope prompt history"
+    )
 
 
 class ImagesResponse(BaseModel):

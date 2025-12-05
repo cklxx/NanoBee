@@ -56,8 +56,8 @@ class PPTWorkflowService:
                 api_key=self.settings.image_api_key,
             )
 
-    def read_notebook(self, topic: str, stage: str | None = None) -> PromptNotebookResponse:
-        notebook = self._notebook(topic)
+    def read_notebook(self, topic: str, stage: str | None = None, session_id: str | None = None) -> PromptNotebookResponse:
+        notebook = self._notebook(topic, session_id)
         stages = [stage] if stage else ["search", "outline", "slides", "images"]
 
         prompts: list[PromptRecord] = []
@@ -77,7 +77,7 @@ class PPTWorkflowService:
 
     def generate_references(self, request: SearchRequest) -> SearchResponse:
         """使用真实Web搜索生成参考资料"""
-        notebook = self._notebook(request.topic)
+        notebook = self._notebook(request.topic, request.session_id)
         notebook.save_prompt(
             "search",
             self._build_search_prompt(request),
@@ -187,7 +187,7 @@ class PPTWorkflowService:
         return []
 
     def generate_outline(self, request: OutlineRequest) -> OutlineResponse:
-        notebook = self._notebook(request.topic)
+        notebook = self._notebook(request.topic, request.session_id)
         notebook.save_prompt(
             "outline",
             self._build_outline_prompt(request),
@@ -217,7 +217,7 @@ class PPTWorkflowService:
         return OutlineSection(title=title, bullets=bullets)
 
     def generate_slides(self, request: SlidesRequest) -> SlidesResponse:
-        notebook = self._notebook(request.topic)
+        notebook = self._notebook(request.topic, request.session_id)
         references = request.references or []
         notebook.save_prompt(
             "slides",
@@ -292,15 +292,15 @@ class PPTWorkflowService:
             )
 
         topic = request.topic or (request.slides[0].title if request.slides else "images")
-        notebook = self._notebook(topic)
+        notebook = self._notebook(topic, request.session_id)
         notebook.save_prompt(
             "images",
             self._build_image_prompt(model, base_url, watermark, len(request.slides)),
         )
         return ImagesResponse(images=images)
 
-    def _notebook(self, topic: str) -> PromptNotebook:
-        return PromptNotebook(root=self.notebook_root, topic=topic)
+    def _notebook(self, topic: str, session_id: str | None = None) -> PromptNotebook:
+        return PromptNotebook(root=self.notebook_root, topic=topic, session_id=session_id)
 
     def _build_data_url(
         self,

@@ -53,6 +53,9 @@ async def build_images(
 
 @router.get("/prompts", response_model=PromptNotebookResponse)
 async def read_prompts(
-    topic: str, stage: str | None = None, service: PPTWorkflowService = Depends(get_service)
+    topic: str,
+    stage: str | None = None,
+    session_id: str | None = None,
+    service: PPTWorkflowService = Depends(get_service),
 ) -> PromptNotebookResponse:
-    return service.read_notebook(topic, stage)
+    return service.read_notebook(topic, stage, session_id)

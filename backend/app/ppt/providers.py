@@ -90,7 +90,9 @@ class SeaDreamImageProvider:
         payload = {
             "model": self.model,
             "prompt": prompt,
-            "size": "1024x576",
+            # SeaDream requires the generated image to be at least 3,686,400 pixels.
+            # Use a 16:9 size that meets the minimum to avoid 400 errors.
+            "size": "2560x1440",
             "n": 1,
             "response_format": "b64_json",
             "watermark": watermark,
