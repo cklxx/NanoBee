@@ -193,28 +193,14 @@ class PPTWorkflowService:
 
     def generate_outline(self, request: OutlineRequest) -> OutlineResponse:
         notebook = self._notebook(request.topic, request.session_id)
-        notebook.save_prompt(
-            "outline",
-            self._build_outline_prompt(request),
-        )
+        outline_prompt = self._build_outline_prompt(request)
+        notebook.save_prompt("outline", outline_prompt)
 
         top_refs = request.references[:3]
         context = "、".join(ref.title for ref in top_refs) or "用户输入"
-        prompt_outline = self._generate_outline_from_model(request, context)
-        outline = prompt_outline or [
-            self._outline_section(
-                f"{request.topic} 封面",
-                [
-                    f"主题总览：{request.topic}",
-                    f"关键词与配色：{DEFAULT_PALETTE.primary}/{DEFAULT_PALETTE.secondary}",
-                    f"参考素材：{context}",
-                ],
-            ),
-            self._outline_section("机会与痛点", ["市场现状", "主要挑战", "用户痛点"]),
-            self._outline_section("解决方案", ["核心主张", "架构与流程", "差异化亮点"]),
-            self._outline_section("案例与数据", ["行业案例", "关键指标", "可执行步骤"]),
-            self._outline_section("路径与行动", ["里程碑", "资源/风险", "下一步计划"]),
-        ]
+        outline = self._generate_outline_from_model(request, context, outline_prompt)
+        if not outline:
+            raise RuntimeError("Outline generation failed: no content returned from model")
 
         return OutlineResponse(topic=request.topic, outline=outline)
 
@@ -448,12 +434,8 @@ class PPTWorkflowService:
         )
 
     def _generate_outline_from_model(
-        self, request: OutlineRequest, context: str
+        self, request: OutlineRequest, context: str, prompt: str
     ) -> list[OutlineSection] | None:
-        prompt = (
-            f"为主题《{request.topic}》生成 5 章 PPT 大纲，每章含 3 条 bullet。"
-            f"参考素材：{context}。以 '章节：' 开头写章节标题，后面逐行列出 '- ' 开头的要点。"
-        )
         content = self._maybe_generate_text(prompt, request.text_model)
         if not content:
             return None
@@ -485,25 +467,22 @@ class PPTWorkflowService:
     ) -> list[str]:
         prompt_file = PROMPTS_DIR / "slide_content.md"
         if not prompt_file.exists():
-            # Fallback if file not found
-            prompt = (
-                f"主题《{request.topic}》，章节《{section.title}》。"
-                f"参考提示：{request.style_prompt or '商务简洁'}。"
-                "请输出 3-4 条要点，每条不超过 30 字，以 '- ' 开头。"
-            )
-        else:
-            template = prompt_file.read_text(encoding="utf-8")
-            prompt = template.format(
-                topic=request.topic,
-                section_title=section.title,
-                style_prompt=request.style_prompt or '专业商务'
-            )
+            raise FileNotFoundError("Prompt template slide_content.md is missing under prompts/")
+
+        template = prompt_file.read_text(encoding="utf-8")
+        prompt = template.format(
+            topic=request.topic,
+            section_title=section.title,
+            style_prompt=request.style_prompt or '专业商务'
+        )
 
         content = self._maybe_generate_text(prompt)
         if not content:
-            return section.bullets
+            raise RuntimeError(f"Slide content generation failed for section: {section.title}")
         bullets = [line.lstrip("- ") for line in content.splitlines() if line.strip().startswith("-")]
-        return bullets or section.bullets
+        if not bullets:
+            raise RuntimeError(f"No bullets returned for section: {section.title}")
+        return bullets
 
 
     def _maybe_generate_text(self, prompt: str, model: ModelConfig | None = None) -> str | None:
