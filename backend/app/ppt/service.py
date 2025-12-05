@@ -643,9 +643,10 @@ class PPTWorkflowService:
 
         return template.format(
             topic=request.topic,
-            outline="\n".join(outline_lines),
-            references="\n".join(ref_lines),
+            outline=outline_lines,
+            references=ref_lines,
             style_prompt=request.style_prompt or "默认",
+            section_title="{section_title}",
         )
 
     @staticmethod
