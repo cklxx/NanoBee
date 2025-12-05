@@ -638,25 +638,16 @@ class PPTWorkflowService:
             f"- {ref.rank or idx + 1}. {ref.title} ({ref.source}): {ref.summary[:100]}"
             for idx, ref in enumerate(request.references)
         )
-        
-        prompt_file = PROMPTS_DIR / "outline.md"
-        if prompt_file.exists():
-            template = prompt_file.read_text(encoding="utf-8")
-            return template.format(
-                topic=request.topic,
-                ref_count=len(request.references),
-                refs_block=refs_block,
-                max_slides=MAX_SLIDES
-            )
-            
-        # Fallback
-        return f"""请根据以下参考资料，为主题"{request.topic}"生成一个专业、有深度的PPT大纲。
+        template = PPTWorkflowService._load_prompt_template("outline.md")
+        if not template:
+            raise FileNotFoundError("Prompt template outline.md is missing under prompts/")
 
-## 参考资料（共{len(request.references)}条）
-{refs_block}
-
-## PPT大纲要求
-请生成{MAX_SLIDES}页的大纲。"""
+        return template.format(
+            topic=request.topic,
+            ref_count=len(request.references),
+            refs_block=refs_block,
+            max_slides=MAX_SLIDES,
+        )
 
 
     @staticmethod
@@ -667,13 +658,15 @@ class PPTWorkflowService:
         outline_lines = "\n".join(
             f"- {section.title}: {', '.join(section.bullets)}" for section in request.outline
         )
-        return (
-            f"- 主题: {request.topic}\n"
-            f"- 风格: {request.style_prompt or '默认'}\n"
-            f"- 文本模型: {request.text_model.model if request.text_model else '默认'}\n"
-            f"- 参考: \n{ref_lines}\n"
-            f"- 大纲: \n{outline_lines}\n"
-            f"- 总页数上限: {MAX_SLIDES}\n"
+        template = PPTWorkflowService._load_prompt_template("slide_content.md")
+        if not template:
+            raise FileNotFoundError("Prompt template slide_content.md is missing under prompts/")
+
+        return template.format(
+            topic=request.topic,
+            outline="\n".join(outline_lines),
+            references="\n".join(ref_lines),
+            style_prompt=request.style_prompt or "默认",
         )
 
     @staticmethod
