@@ -37,6 +37,38 @@ async def build_outline(
     return service.generate_outline(body)
 
 
+@router.post("/outline-stream")
+async def build_outline_stream(
+    body: OutlineRequest, service: PPTWorkflowService = Depends(get_service)
+):
+    """
+    SSE streaming endpoint for progressive outline generation.
+    Yields events after each round completes.
+    """
+    from fastapi.responses import StreamingResponse
+    import json
+    
+    def generate():
+        try:
+            for event in service.generate_outline_stream(body):
+                # Format as SSE event
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            error_event = {"type": "error", "error": str(e)}
+            yield f"data: {json.dumps(error_event)}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable Nginx buffering
+        }
+    )
+
+
+
 @router.post("/slides", response_model=SlidesResponse)
 async def build_slides(
     body: SlidesRequest, service: PPTWorkflowService = Depends(get_service)

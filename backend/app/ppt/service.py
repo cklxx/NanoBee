@@ -198,11 +198,242 @@ class PPTWorkflowService:
 
         top_refs = request.references[:3]
         context = "、".join(ref.title for ref in top_refs) or "用户输入"
-        outline = self._generate_outline_from_model(request, context, outline_prompt)
+        
+        # Use multi-round generation for better reliability
+        outline = self._generate_outline_in_rounds(request, context, outline_prompt)
         if not outline:
             raise RuntimeError("Outline generation failed: no content returned from model")
 
         return OutlineResponse(topic=request.topic, outline=outline)
+    
+    def generate_outline_stream(self, request: OutlineRequest):
+        """
+        生成器函数，yield SSE events for progressive outline generation.
+        Yields dict objects that will be JSON-serialized by the endpoint.
+        """
+        notebook = self._notebook(request.topic, request.session_id)
+        outline_prompt = self._build_outline_prompt(request)
+        notebook.save_prompt("outline", outline_prompt)
+        
+        context = "、".join(ref.title for ref in request.references[:3]) or "用户输入"
+        base_prompt = outline_prompt
+        all_sections: list[OutlineSection] = []
+        
+        try:
+            # Round 1: 第1-5页
+            yield {"type": "progress", "round": 1, "total_rounds": 3, "message": "正在生成第1-5页..."}
+            print("[Outline Stream] Starting Round 1/3: Pages 1-5")
+            
+            round1_prompt = f"""{base_prompt}
+
+## 当前任务
+请生成第 1-5 页，包括：
+1. 封面：主题 + 核心价值
+2. 背景：行业现状/宏观环境
+3. 挑战：核心问题/痛点
+4-5. 解决方案（开篇）：关键方法论的前2个要点
+
+请确保这5页构成完整的开篇部分（背景→问题→初步方案）。
+"""
+            
+            sections_round1 = self._generate_outline_from_model(request, context, round1_prompt)
+            if not sections_round1:
+                yield {"type": "error", "error": "Round 1 failed: no content returned"}
+                return
+            
+            all_sections.extend(sections_round1)
+            print(f"[Outline Stream] ✓ Round 1 complete: {len(sections_round1)} sections")
+            yield {
+                "type": "partial",
+                "round": 1,
+                "sections": [s.model_dump() for s in sections_round1],
+                "total": len(all_sections),
+                "message": f"第1轮完成，已生成{len(all_sections)}页"
+            }
+            
+            # Round 2: 第6-10页
+            yield {"type": "progress", "round": 2, "total_rounds": 3, "message": "正在生成第6-10页..."}
+            print("[Outline Stream] Starting Round 2/3: Pages 6-10")
+            
+            previous_context = self._format_sections_as_context(all_sections)
+            round2_prompt = f"""{base_prompt}
+
+## 已生成内容（第1-5页）
+{previous_context}
+
+## 当前任务
+请继续生成第 6-10 页，包括：
+6-7. 解决方案（深入）：核心方法论的展开说明
+8-9. 论证/案例：数据支撑、案例分析
+10. 对比优势：与traditional方法对比
+
+请确保与前5页逻辑连贯，深入展开解决方案。
+"""
+            
+            sections_round2 = self._generate_outline_from_model(request, context, round2_prompt)
+            if not sections_round2:
+                print("[Outline Stream] Round 2 failed, returning partial results")
+                yield {
+                    "type": "partial_complete",
+                    "outline": [s.model_dump() for s in all_sections],
+                    "total": len(all_sections),
+                    "message": f"第2轮失败，已生成{len(all_sections)}页"
+                }
+                return
+            
+            all_sections.extend(sections_round2)
+            print(f"[Outline Stream] ✓ Round 2 complete: {len(sections_round2)} sections (total: {len(all_sections)})")
+            yield {
+                "type": "partial",
+                "round": 2,
+                "sections": [s.model_dump() for s in sections_round2],
+                "total": len(all_sections),
+                "message": f"第2轮完成，已生成{len(all_sections)}页"
+            }
+            
+            # Round 3: 第11-15页
+            yield {"type": "progress", "round": 3, "total_rounds": 3, "message": "正在生成第11-15页..."}
+            print("[Outline Stream] Starting Round 3/3: Pages 11-15")
+            
+            previous_context = self._format_sections_as_context(all_sections)
+            round3_prompt = f"""{base_prompt}
+
+## 已生成内容（第1-10页）
+{previous_context}
+
+## 当前任务
+请继续生成第 11-15 页（结尾部分），包括：
+11-12. 展望：未来趋势、发展方向
+13-14. 行动建议：具体实施步骤
+15. 封底：总结金句
+
+请确保这5页构成完整的收尾，呼应开篇主题。
+"""
+            
+            sections_round3 = self._generate_outline_from_model(request, context, round3_prompt)
+            if not sections_round3:
+                print("[Outline Stream] Round 3 failed, returning partial results")
+                yield {
+                    "type": "partial_complete",
+                    "outline": [s.model_dump() for s in all_sections],
+                    "total": len(all_sections),
+                    "message": f"第3轮失败，已生成{len(all_sections)}页"
+                }
+                return
+            
+            all_sections.extend(sections_round3)
+            print(f"[Outline Stream] ✓ Round 3 complete: {len(sections_round3)} sections")
+            print(f"[Outline Stream] 🎉 All rounds complete! Total: {len(all_sections)} sections")
+            
+            # Final complete event
+            yield {
+                "type": "complete",
+                "outline": [s.model_dump() for s in all_sections],
+                "total": len(all_sections),
+                "message": f"大纲生成完成，共{len(all_sections)}个部分"
+            }
+            
+        except Exception as e:
+            print(f"[Outline Stream] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            yield {"type": "error", "error": str(e)}
+
+    
+    def _generate_outline_in_rounds(
+        self, request: OutlineRequest, context: str, base_prompt: str
+    ) -> list[OutlineSection] | None:
+        """
+        生成大纲，分3轮进行：
+        - Round 1: 页 1-5 (封面、背景、挑战、解决方案1-2)
+        - Round 2: 页 6-10 (解决方案3-4、论证、案例)
+        - Round 3: 页 11-15 (对比、展望、行动建议、封底)
+        """
+        all_sections: list[OutlineSection] = []
+        
+        # Round 1: 第1-5页
+        print("[Outline] Starting Round 1/3: Pages 1-5")
+        round1_prompt = f"""{base_prompt}
+
+## 当前任务
+请生成第 1-5 页，包括：
+1. 封面：主题 + 核心价值
+2. 背景：行业现状/宏观环境
+3. 挑战：核心问题/痛点
+4-5. 解决方案（开篇）：关键方法论的前2个要点
+
+请确保这5页构成完整的开篇部分（背景→问题→初步方案）。
+"""
+        
+        sections_round1 = self._generate_outline_from_model(request, context, round1_prompt)
+        if not sections_round1:
+            print("[Outline] Round 1 failed, aborting")
+            return None
+        
+        all_sections.extend(sections_round1)
+        print(f"[Outline] ✓ Round 1 complete: {len(sections_round1)} sections")
+        
+        # Round 2: 第6-10页，基于Round 1
+        print("[Outline] Starting Round 2/3: Pages 6-10")
+        previous_context = self._format_sections_as_context(all_sections)
+        round2_prompt = f"""{base_prompt}
+
+## 已生成内容（第1-5页）
+{previous_context}
+
+## 当前任务
+请继续生成第 6-10 页，包括：
+6-7. 解决方案（深入）：核心方法论的展开说明
+8-9. 论证/案例：数据支撑、案例分析
+10. 对比优势：与tradicional方法对比
+
+请确保与前5页逻辑连贯，深入展开解决方案。
+"""
+        
+        sections_round2 = self._generate_outline_from_model(request, context, round2_prompt)
+        if not sections_round2:
+            print("[Outline] Round 2 failed, returning partial results from Round 1")
+            return all_sections  # 返回部分结果
+        
+        all_sections.extend(sections_round2)
+        print(f"[Outline] ✓ Round 2 complete: {len(sections_round2)} sections (total: {len(all_sections)})")
+        
+        # Round 3: 第11-15页
+        print("[Outline] Starting Round 3/3: Pages 11-15")
+        previous_context = self._format_sections_as_context(all_sections)
+        round3_prompt = f"""{base_prompt}
+
+## 已生成内容（第1-10页）
+{previous_context}
+
+## 当前任务
+请继续生成第 11-15 页（结尾部分），包括：
+11-12. 展望：未来趋势、发展方向
+13-14. 行动建议：具体实施步骤
+15. 封底：总结金句
+
+请确保这5页构成完整的收尾，呼应开篇主题。
+"""
+        
+        sections_round3 = self._generate_outline_from_model(request, context, round3_prompt)
+        if not sections_round3:
+            print("[Outline] Round 3 failed, returning partial results from Round 1-2")
+            return all_sections  # 返回部分结果
+        
+        all_sections.extend(sections_round3)
+        print(f"[Outline] ✓ Round 3 complete: {len(sections_round3)} sections")
+        print(f"[Outline] 🎉 All rounds complete! Total: {len(all_sections)} sections")
+        
+        return all_sections
+    
+    def _format_sections_as_context(self, sections: list[OutlineSection]) -> str:
+        """将已生成的sections格式化为context string"""
+        lines = []
+        for idx, section in enumerate(sections, 1):
+            lines.append(f"{idx}. {section.title}")
+            for bullet in section.bullets:
+                lines.append(f"   - {bullet}")
+        return "\n".join(lines)
 
     def _outline_section(self, title: str, bullets: list[str]) -> OutlineSection:
         return OutlineSection(title=title, bullets=bullets)
@@ -438,7 +669,13 @@ class PPTWorkflowService:
     ) -> list[OutlineSection] | None:
         content = self._maybe_generate_text(prompt, request.text_model)
         if not content:
+            print("[Outline] ERROR: No content returned from text generation")
             return None
+        
+        # Log the raw content for debugging
+        content_preview = content[:500].replace("\n", " ")
+        print(f"[Outline] Raw content preview (first 500 chars): {content_preview}")
+        print(f"[Outline] Total content length: {len(content)} characters")
         
         # Try JSON format first (as requested by the prompt template)
         import json
@@ -450,7 +687,20 @@ class PPTWorkflowService:
             json_match = re.search(r'\{[\s\S]*\}|\[[\s\S]*\]', content)
             if json_match:
                 json_str = json_match.group(0)
-                data = json.loads(json_str)
+                json_preview = json_str[:200].replace("\n", " ")
+                print(f"[Outline] Found JSON match, preview: {json_preview}...")
+                print(f"[Outline] JSON string length: {len(json_str)} characters")
+                
+                try:
+                    data = json.loads(json_str)
+                    print(f"[Outline] Successfully parsed JSON, type: {type(data)}")
+                   
+                    if isinstance(data, dict):
+                        print(f"[Outline] JSON keys: {list(data.keys())}")
+                except json.JSONDecodeError as json_err:
+                    print(f"[Outline] JSON decode error: {json_err}")
+                    print(f"[Outline] JSON string that failed to parse: {json_str[:1000]}")
+                    raise
                 
                 # Handle different JSON response formats
                 sections: list[OutlineSection] = []
@@ -458,29 +708,45 @@ class PPTWorkflowService:
                 # Format 1: {"ppt_outline": [...]}
                 if isinstance(data, dict) and "ppt_outline" in data:
                     outline_data = data["ppt_outline"]
+                    print(f"[Outline] Using 'ppt_outline' key, found {len(outline_data)} items")
                 elif isinstance(data, dict) and "outline" in data:
                     outline_data = data["outline"]
+                    print(f"[Outline] Using 'outline' key, found {len(outline_data)} items")
                 elif isinstance(data, list):
                     outline_data = data
+                    print(f"[Outline] Using direct array, found {len(outline_data)} items")
                 else:
                     # Unknown format, fall through to text parsing
+                    print(f"[Outline] Unknown JSON format, data type: {type(data)}, keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
                     raise ValueError("Unknown JSON format")
                 
-                for item in outline_data:
+                for idx, item in enumerate(outline_data):
                     if isinstance(item, dict):
                         title = item.get("title", "")
                         bullets = item.get("bullets", [])
+                        print(f"[Outline] Item {idx}: title='{title[:50]}...', bullets_count={len(bullets)}")
                         if title and bullets:
                             sections.append(self._outline_section(title, bullets))
+                        else:
+                            print(f"[Outline] WARNING: Item {idx} missing title or bullets")
+                    else:
+                        print(f"[Outline] WARNING: Item {idx} is not a dict, type: {type(item)}")
                 
                 if sections:
-                    print(f"[Outline] Parsed {len(sections)} sections from JSON format")
+                    print(f"[Outline] ✓ Successfully parsed {len(sections)} sections from JSON format")
                     return sections
+                else:
+                    print("[Outline] WARNING: JSON parsed but no valid sections found")
+            else:
+                print("[Outline] No JSON pattern found in content")
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             # JSON parsing failed, fall back to text format
-            print(f"[Outline] JSON parsing failed ({e}), falling back to text format")
+            print(f"[Outline] JSON parsing failed: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Fallback: Parse text format ("章节:" style)
+        print("[Outline] Attempting text format parsing...")
         sections: list[OutlineSection] = []
         current_title: str | None = None
         bullets: list[str] = []
@@ -504,7 +770,10 @@ class PPTWorkflowService:
             sections.append(self._outline_section(current_title, bullets))
         
         if sections:
-            print(f"[Outline] Parsed {len(sections)} sections from text format")
+            print(f"[Outline] ✓ Parsed {len(sections)} sections from text format")
+        else:
+            print("[Outline] ERROR: No sections found in either JSON or text format")
+            print(f"[Outline] Content dump:\n{content}")
         return sections or None
 
     def _generate_slide_bullets(

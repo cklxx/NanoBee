@@ -25,7 +25,7 @@ class DoubaoTextProvider:
     def can_call(self) -> bool:
         return bool(self.api_key) and self._valid_url(self.base_url)
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, stream: bool = False) -> str:
         if not self.api_key:
             raise RuntimeError("DoubaoTextProvider requires api_key to call")
         if not self._valid_url(self.base_url):
@@ -37,7 +37,7 @@ class DoubaoTextProvider:
             url = f"{url.rstrip('/')}/chat/completions"
 
         preview = self._prompt_preview(prompt)
-        print(f"[Doubao] Attempting text generation | model={self.model} base_url={url} can_call={self.can_call} prompt_preview={preview}")
+        print(f"[Doubao] Attempting text generation | model={self.model} base_url={url} stream={stream} prompt_preview={preview}")
 
         with self._client() as client:
             response = client.post(
@@ -48,8 +48,10 @@ class DoubaoTextProvider:
                     "messages": [
                         {"role": "user", "content": prompt},
                     ],
+                    "max_tokens": 8192,  # 设置为8K，平衡质量和速度（官方最大支持32K）
+                    "stream": stream,  # Enable streaming
                 },
-                timeout=60,  # 增加超时时间到60秒
+                timeout=120,  # 增加超时时间到120秒，大纲生成可能需要更长时间
             )
             try:
                 response.raise_for_status()
@@ -57,10 +59,32 @@ class DoubaoTextProvider:
                 detail = exc.response.text if exc.response is not None else ""
                 print(f"[Doubao] HTTP {exc.response.status_code if exc.response else '?'} error: {detail}")
                 raise
-            data = response.json()
-            content = self._extract_content(data)
-            print(f"[Doubao] Text generation succeeded | model={self.model} preview={content[:80].replace(chr(10), ' ')}")
-            return content
+            
+            if stream:
+                # Stream mode: collect chunks
+                content = ""
+                for line in response.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # Remove "data: " prefix
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            delta = data.get("choices", [{}])[0].get("delta", {})
+                            chunk = delta.get("content", "")
+                            if chunk:
+                                content += chunk
+                        except json.JSONDecodeError:
+                            continue
+                
+                print(f"[Doubao] Streaming complete | total_length={len(content)}")
+                return content
+            else:
+                # Non-stream mode: parse JSON response
+                data = response.json()
+                content = self._extract_content(data)
+                print(f"[Doubao] Text generation succeeded | model={self.model} preview={content[:80].replace(chr(10), ' ')}")
+                return content
 
     def _extract_content(self, data: dict[str, Any]) -> str:
         choices = data.get("choices") or []

@@ -119,8 +119,9 @@ export function HomePage() {
     if (!references().length) await runReferenceSearch();
     setBusy("outline");
     pushStatus(`正在生成 PPT 大纲...`);
+
     try {
-      const response = await fetch(`${apiBase}/api/ppt/outline`, {
+      const response = await fetch(`${apiBase}/api/ppt/outline-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -132,20 +133,67 @@ export function HomePage() {
             : undefined,
         }),
       });
+
       if (!response.ok) {
         const errorText = await response.text();
-        let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorDetail = errorJson.detail || errorJson.message || errorText;
-        } catch {
-          errorDetail = errorText || errorDetail;
-        }
-        throw new Error(`大纲生成失败 - ${errorDetail}`);
+        throw new Error(`大纲生成失败 - HTTP ${response.status}: ${errorText}`);
       }
-      const data = await response.json();
-      setOutline(data.outline || []);
-      pushStatus(`✓ 大纲生成完成，共 ${data.outline?.length || 0} 个部分`);
+
+      // Read SSE stream
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("无法读取响应流");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              switch (data.type) {
+                case "progress":
+                  pushStatus(`🔄 第${data.round}/3轮：${data.message}`);
+                  break;
+
+                case "partial":
+                  // Progressively update outline
+                  setOutline((prev) => [...prev, ...data.sections]);
+                  pushStatus(`✓ ${data.message}`);
+                  break;
+
+                case "partial_complete":
+                  // Handle partial completion (some rounds failed)
+                  setOutline(data.outline || []);
+                  pushStatus(`⚠ ${data.message}`);
+                  break;
+
+                case "complete":
+                  setOutline(data.outline || []);
+                  pushStatus(`✓ ${data.message}`);
+                  break;
+
+                case "error":
+                  pushStatus(`✗ 大纲生成失败: ${data.error}`);
+                  console.error("Outline generation error:", data.error);
+                  break;
+              }
+            } catch (e) {
+              console.error("Failed to parse SSE data:", line, e);
+            }
+          }
+        }
+      }
     } catch (error: any) {
       const fullError = `✗ 大纲生成失败: ${error.message}`;
       pushStatus(fullError);
@@ -318,186 +366,252 @@ export function HomePage() {
   const currentSlide = createMemo(() => slides()[currentSlideIndex()]);
   const currentImage = createMemo(() => slideImages().find((img) => img.title === currentSlide()?.title));
 
+  // Convert outline to slide format for unified preview
+  const outlineAsSlides = createMemo(() =>
+    outline().map(section => ({
+      title: section.title,
+      bullets: section.bullets,
+      keywords: "", // Outline doesn't have keywords yet
+    }))
+  );
+
+  // Use slides if available, otherwise use outline as slides
+  const previewSlides = createMemo(() => slides().length > 0 ? slides() : outlineAsSlides());
+  const currentPreviewSlide = createMemo(() => previewSlides()[currentSlideIndex()]);
+
+
   return (
     <div class="min-h-screen bg-slate-50">
       <div class="border-b bg-white">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-          <div>
-            <p class="text-xs uppercase tracking-wide text-slate-500">TanStack Router + Solid</p>
-            <h1 class="text-3xl font-bold text-slate-800">NanoBee PPT</h1>
-            <p class="text-slate-500">AI 驱动的 PPT 生成工作流</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <Badge variant="secondary" class="text-xs">
-              Session {sessionId()?.slice(0, 8)}
-            </Badge>
-            <Button variant="outline" size="sm" onClick={resetSession}>
-              新会话
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 px-4 py-6">
-        <div class="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle class="text-lg">1. 主题与风格</CardTitle>
-              <CardDescription>设置 PPT 主题与风格提示词</CardDescription>
-            </CardHeader>
-            <CardContent class="space-y-4">
-              <div class="space-y-2">
-                <Label for="topic">PPT 主题</Label>
-                <Input
-                  id="topic"
-                  value={topic()}
-                  onInput={(e) => setTopic(e.currentTarget.value)}
-                  placeholder="例如：人工智能发展历史"
-                />
-              </div>
-              <div class="space-y-2">
-                <Label for="style">风格描述</Label>
-                <Textarea
-                  id="style"
-                  rows={2}
-                  value={stylePrompt()}
-                  onInput={(e) => setStylePrompt(e.currentTarget.value)}
-                  placeholder="例如：极简 · 柔和渐变 · 科技感"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle class="text-lg">2. 模型配置</CardTitle>
-              <CardDescription>可选：自定义火山引擎 API Key</CardDescription>
-            </CardHeader>
-            <CardContent class="space-y-3">
-              <Input
-                placeholder="sk-..."
-                value={apiKey()}
-                onInput={(e) => handleApiKeyChange(e.currentTarget.value)}
-              />
-              <p class="text-xs text-slate-500">
-                密钥仅保存在浏览器本地，用于覆盖默认接入点。
-              </p>
-              <div class="flex gap-2">
-                <Button class="flex-1" onClick={runReferenceSearch} disabled={!!busy()}>
-                  📚 搜索资料
-                </Button>
-                <Button class="flex-1" onClick={runOutline} disabled={!!busy()}>
-                  🧭 生成大纲
-                </Button>
-              </div>
-              <div class="flex gap-2">
-                <Button class="flex-1" onClick={runSlides} disabled={!!busy()}>
-                  📝 生成内容
-                </Button>
-                <Button class="flex-1" onClick={runImages} disabled={!!busy()}>
-                  🖼️ 生成图片
-                </Button>
-              </div>
-              <Button variant="outline" class="w-full" onClick={downloadPdf} disabled={!slides().length}>
-                ⬇️ 导出 PDF
+        <div class="border-b bg-white">
+          <div class="w-full px-6 py-4 flex items-center justify-between gap-4">
+            <div>
+              <p class="text-xs uppercase tracking-wide text-slate-500">TanStack Router + Solid</p>
+              <h1 class="text-3xl font-bold text-slate-800">NanoBee PPT</h1>
+              <p class="text-slate-500">AI 驱动的 PPT 生成工作流</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <Badge variant="secondary" class="text-xs">
+                Session {sessionId()?.slice(0, 8)}
+              </Badge>
+              <Button variant="outline" size="sm" onClick={resetSession}>
+                新会话
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle class="text-lg">最近状态</CardTitle>
-              <CardDescription>跟踪每一步的执行结果</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div class="space-y-1 text-sm text-slate-600 max-h-48 overflow-y-auto">
-                <For each={statusLog()}>{(item) => <p>{item}</p>}</For>
-                <Show when={!statusLog().length}>
-                  <p class="text-slate-400">暂无记录</p>
-                </Show>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
 
-        <div class="lg:col-span-2 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle class="text-lg">生成预览</CardTitle>
-              <CardDescription>大纲、内容与图片预览</CardDescription>
-            </CardHeader>
-            <CardContent class="space-y-4">
-              <Show
-                when={currentSlide()}
-                fallback={
-                  <Show
-                    when={busy()}
-                    fallback={<p class="text-slate-500">请先生成大纲或内容</p>}
-                  >
-                    <LoadingTimer operation={busy() as "reference" | "outline" | "slides" | "images"} />
+        <div class="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 px-6 py-6">
+          <div class="space-y-4 lg:col-span-4 xl:col-span-3">
+            <Show
+              when={references().length > 0}
+              fallback={
+                <Card>
+                  <CardHeader>
+                    <CardTitle class="text-lg">1. 主题与风格</CardTitle>
+                    <CardDescription>设置 PPT 主题与风格提示词</CardDescription>
+                  </CardHeader>
+                  <CardContent class="space-y-4">
+                    <div class="space-y-2">
+                      <Label for="topic">PPT 主题</Label>
+                      <Input
+                        id="topic"
+                        value={topic()}
+                        onInput={(e) => setTopic(e.currentTarget.value)}
+                        placeholder="例如：人工智能发展历史"
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="style">风格描述</Label>
+                      <Textarea
+                        id="style"
+                        rows={2}
+                        value={stylePrompt()}
+                        onInput={(e) => setStylePrompt(e.currentTarget.value)}
+                        placeholder="例如：极简 · 柔和渐变 · 科技感"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              }
+            >
+              <Card>
+                <CardHeader>
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <CardTitle class="text-lg">参考资料</CardTitle>
+                      <CardDescription>已基于主题搜索到 {references().length} 条资料</CardDescription>
+                    </div>
+                    <Button variant="ghost" size="sm" class="text-xs h-7" onClick={() => setReferences([])}>
+                      ✏️ 修改主题
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent class="space-y-3 max-h-[400px] overflow-y-auto">
+                  <For each={references()}>
+                    {(ref) => (
+                      <div class="p-3 border rounded-lg space-y-1 bg-white">
+                        <p class="font-medium text-sm">{ref.title}</p>
+                        <p class="text-xs text-slate-500 line-clamp-2">{ref.summary}</p>
+                        <a class="text-xs text-blue-500 hover:underline" href={ref.url} target="_blank" rel="noreferrer">
+                          {ref.source}
+                        </a>
+                      </div>
+                    )}
+                  </For>
+                </CardContent>
+              </Card>
+            </Show>
+
+            <Card>
+              <CardHeader>
+                <CardTitle class="text-lg">2. 模型配置</CardTitle>
+                <CardDescription>可选：自定义火山引擎 API Key</CardDescription>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <Input
+                  placeholder="sk-..."
+                  value={apiKey()}
+                  onInput={(e) => handleApiKeyChange(e.currentTarget.value)}
+                />
+                <p class="text-xs text-slate-500">
+                  密钥仅保存在浏览器本地，用于覆盖默认接入点。
+                </p>
+                <div class="flex gap-2">
+                  <Button class="flex-1" onClick={runReferenceSearch} disabled={!!busy()}>
+                    📚 搜索资料
+                  </Button>
+                  <Button class="flex-1" onClick={runOutline} disabled={!!busy()}>
+                    🧭 生成大纲
+                  </Button>
+                </div>
+                <div class="flex gap-2">
+                  <Button class="flex-1" onClick={runSlides} disabled={!!busy()}>
+                    📝 生成内容
+                  </Button>
+                  <Button class="flex-1" onClick={runImages} disabled={!!busy()}>
+                    🖼️ 生成图片
+                  </Button>
+                </div>
+                <Button variant="outline" class="w-full" onClick={downloadPdf} disabled={!slides().length}>
+                  ⬇️ 导出 PDF
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle class="text-lg">最近状态</CardTitle>
+                <CardDescription>跟踪每一步的执行结果</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div class="space-y-1 text-sm text-slate-600 max-h-48 overflow-y-auto">
+                  <For each={statusLog()}>{(item) => <p>{item}</p>}</For>
+                  <Show when={!statusLog().length}>
+                    <p class="text-slate-400">暂无记录</p>
                   </Show>
-                }
-              >
-                <div class="flex flex-col gap-4">
-                  <div class="flex items-start gap-4">
-                    <div class="flex-1 space-y-3">
-                      <p class="text-sm uppercase tracking-wide text-slate-500">{currentSlide()?.title}</p>
-                      <div class="space-y-2">
-                        <For each={currentSlide()?.bullets || []}>
-                          {(bullet) => <p class="text-slate-800">• {bullet}</p>}
-                        </For>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div class="lg:col-span-8 xl:col-span-9 space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle class="text-lg">生成预览</CardTitle>
+                <CardDescription>大纲、内容与图片预览</CardDescription>
+              </CardHeader>
+              <CardContent class="space-y-4">
+                <Show
+                  when={currentPreviewSlide()}
+                  fallback={
+                    <Show
+                      when={busy()}
+                      fallback={
+                        <div class="aspect-video bg-slate-100 rounded-lg flex flex-col items-center justify-center p-8 text-center">
+                          <p class="text-slate-500 mb-2">👋 欢迎使用 NanoBee PPT</p>
+                          <p class="text-sm text-slate-400">在左侧配置主题，即可开始生成</p>
+                        </div>
+                      }
+                    >
+                      <div class="aspect-video bg-slate-50 rounded-lg flex flex-col items-center justify-center relative overflow-hidden">
+                        <LoadingTimer operation={busy() as "reference" | "outline" | "slides" | "images"} />
+                      </div>
+                    </Show>
+                  }
+                >
+                  <div class="flex flex-col gap-4">
+                    {/* 16:9 Slide Preview Container */}
+                    <div class="aspect-video bg-white border shadow-sm rounded-lg relative overflow-hidden flex flex-col">
+                      {/* Background Image Layer */}
+                      <Show when={currentImage()?.url || currentImage()?.data_url}>
+                        <div class="absolute inset-0 z-0">
+                          <img
+                            src={currentImage()?.url || currentImage()?.data_url}
+                            alt={currentPreviewSlide()?.title || "slide"}
+                            class="w-full h-full object-cover opacity-20"
+                          />
+                          <div class="absolute inset-0 bg-gradient-to-t from-white/90 to-white/60" />
+                        </div>
+                      </Show>
+
+                      {/* Content Layer */}
+                      <div class="relative z-10 flex-1 p-8 sm:p-12 md:p-16 flex flex-col justify-center">
+                        <h2 class="text-3xl sm:text-4xl font-bold text-slate-900 mb-6 sm:mb-8 leading-tight">
+                          {currentPreviewSlide()?.title}
+                        </h2>
+                        <div class="space-y-4 sm:space-y-6">
+                          <For each={currentPreviewSlide()?.bullets || []}>
+                            {(bullet) => (
+                              <div class="flex items-start gap-4">
+                                <span class="w-2 h-2 rounded-full bg-blue-600 mt-2.5 flex-shrink-0" />
+                                <p class="text-lg sm:text-xl text-slate-800 leading-relaxed">{bullet}</p>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+
+                      {/* Footer */}
+                      <div class="relative z-10 px-8 py-4 flex justify-between items-center text-xs text-slate-400 border-t border-slate-100/50">
+                        <span>NanoBee AI Generated</span>
+                        <span>{currentSlideIndex() + 1} / {previewSlides().length}</span>
                       </div>
                     </div>
-                    <div class="w-64 h-40 border rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden">
-                      <Show when={currentImage()?.url || currentImage()?.data_url} fallback={<span class="text-slate-400">等待图片</span>}>
-                        <img
-                          src={currentImage()?.url || currentImage()?.data_url}
-                          alt={currentSlide()?.title || "slide"}
-                          class="w-full h-full object-cover"
-                        />
-                      </Show>
-                    </div>
-                  </div>
-                  <div class="flex gap-2 overflow-x-auto pb-2">
-                    <For each={slides()}>
-                      {(slide, idx) => (
-                        <button
-                          class={`px-3 py-2 rounded border ${idx() === currentSlideIndex() ? "border-slate-500 bg-slate-100" : "border-slate-200"}`}
-                          onClick={() => setCurrentSlideIndex(idx())}
-                        >
-                          <p class="text-sm font-medium truncate w-48 text-left">{slide.title}</p>
-                          <p class="text-xs text-slate-500">{idx() + 1}/{slides().length}</p>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle class="text-lg">参考资料</CardTitle>
-              <CardDescription>搜索结果（最多 6 条）</CardDescription>
-            </CardHeader>
-            <CardContent class="space-y-3">
-              <For each={references()}>
-                {(ref) => (
-                  <div class="p-3 border rounded-lg space-y-1">
-                    <p class="font-medium">{ref.title}</p>
-                    <p class="text-sm text-slate-600">{ref.summary}</p>
-                    <a class="text-sm" href={ref.url} target="_blank" rel="noreferrer">
-                      {ref.source}
-                    </a>
+                    {/* Slide navigation */}
+                    <div class="flex gap-2 overflow-x-auto pb-2 min-h-[80px]">
+                      <For each={previewSlides()}>
+                        {(slide, idx) => (
+                          <button
+                            class={`flex-shrink-0 w-32 aspect-video rounded border flex flex-col p-2 text-left transition-all ${idx() === currentSlideIndex()
+                              ? "border-blue-500 ring-2 ring-blue-100 bg-white"
+                              : "border-slate-200 hover:border-slate-300 bg-slate-50"
+                              }`}
+                            onClick={() => setCurrentSlideIndex(idx())}
+                          >
+                            <div class="flex-1 overflow-hidden">
+                              <p class="text-[10px] font-bold text-slate-700 leading-tight line-clamp-2">{slide.title}</p>
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-1">{idx() + 1}</p>
+                          </button>
+                        )}
+                      </For>
+                    </div>
+
+                    {/* Show hint when viewing outline */}
+                    <Show when={slides().length === 0 && outline().length > 0}>
+                      <div class="flex items-center justify-center gap-2 p-2 bg-blue-50 text-blue-700 text-sm rounded border border-blue-100">
+                        <span>ℹ️ 当前为大纲预览模式</span>
+                        <span class="text-blue-400">|</span>
+                        <span>点击"生成内容"继续完善</span>
+                      </div>
+                    </Show>
                   </div>
-                )}
-              </For>
-              <Show when={!references().length}>
-                <p class="text-sm text-slate-400">等待生成</p>
-              </Show>
-            </CardContent>
-          </Card>
+                </Show>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
