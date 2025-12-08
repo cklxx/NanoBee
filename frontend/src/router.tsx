@@ -1,19 +1,19 @@
-import { Route, RootRoute, Router } from "@tanstack/solid-router";
+import { createRootRoute, createRoute, createRouter } from "@tanstack/solid-router";
 import { HomePage } from "@/screens/HomePage";
 import { GuideVolcenginePage } from "@/screens/GuideVolcenginePage";
 import { RootLayout } from "@/shared/RootLayout";
 
-const rootRoute = new RootRoute({
+const rootRoute = createRootRoute({
   component: RootLayout,
 });
 
-const homeRoute = new Route({
+const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: HomePage,
 });
 
-const guideRoute = new Route({
+const guideRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/guide/volcengine",
   component: GuideVolcenginePage,
@@ -21,7 +21,7 @@ const guideRoute = new Route({
 
 const routeTree = rootRoute.addChildren([homeRoute, guideRoute]);
 
-export const router = new Router({
+export const router = createRouter({
   routeTree,
   defaultPreload: "intent",
 });

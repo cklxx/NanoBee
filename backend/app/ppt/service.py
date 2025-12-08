@@ -439,6 +439,48 @@ class PPTWorkflowService:
         content = self._maybe_generate_text(prompt, request.text_model)
         if not content:
             return None
+        
+        # Try JSON format first (as requested by the prompt template)
+        import json
+        import re
+        
+        try:
+            # Clean up content to extract JSON
+            # Look for JSON object or array in the response
+            json_match = re.search(r'\{[\s\S]*\}|\[[\s\S]*\]', content)
+            if json_match:
+                json_str = json_match.group(0)
+                data = json.loads(json_str)
+                
+                # Handle different JSON response formats
+                sections: list[OutlineSection] = []
+                
+                # Format 1: {"ppt_outline": [...]}
+                if isinstance(data, dict) and "ppt_outline" in data:
+                    outline_data = data["ppt_outline"]
+                elif isinstance(data, dict) and "outline" in data:
+                    outline_data = data["outline"]
+                elif isinstance(data, list):
+                    outline_data = data
+                else:
+                    # Unknown format, fall through to text parsing
+                    raise ValueError("Unknown JSON format")
+                
+                for item in outline_data:
+                    if isinstance(item, dict):
+                        title = item.get("title", "")
+                        bullets = item.get("bullets", [])
+                        if title and bullets:
+                            sections.append(self._outline_section(title, bullets))
+                
+                if sections:
+                    print(f"[Outline] Parsed {len(sections)} sections from JSON format")
+                    return sections
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            # JSON parsing failed, fall back to text format
+            print(f"[Outline] JSON parsing failed ({e}), falling back to text format")
+        
+        # Fallback: Parse text format ("章节:" style)
         sections: list[OutlineSection] = []
         current_title: str | None = None
         bullets: list[str] = []
@@ -460,6 +502,9 @@ class PPTWorkflowService:
                 bullets.append(stripped.lstrip("- "))
         if current_title and bullets:
             sections.append(self._outline_section(current_title, bullets))
+        
+        if sections:
+            print(f"[Outline] Parsed {len(sections)} sections from text format")
         return sections or None
 
     def _generate_slide_bullets(

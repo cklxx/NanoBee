@@ -1,9 +1,10 @@
-import { Link, Outlet, useRouterState } from "@tanstack/solid-router";
+import { Link, Outlet, useRouterState, useLocation } from "@tanstack/solid-router";
 import { Show } from "solid-js";
 
 export function RootLayout() {
   const state = useRouterState();
-  const isActive = (to: string) => state.location.pathname === to;
+  const location = useLocation();
+  const isActive = (to: string) => location().pathname === to;
 
   return (
     <div class="min-h-screen bg-slate-50 text-slate-900">
@@ -25,7 +26,7 @@ export function RootLayout() {
               </Link>
             </nav>
           </div>
-          <Show when={state.status === "pending"}>
+          <Show when={state().status === "pending"}>
             <span class="text-xs text-slate-500">Loading...</span>
           </Show>
         </div>

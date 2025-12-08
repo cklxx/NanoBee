@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { LoadingTimer } from "@/components/LoadingTimer";
 
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
@@ -91,12 +92,24 @@ export function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: topic(), limit: 6, session_id: sessionId() }),
       });
-      if (!response.ok) throw new Error(`搜索失败: ${response.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorDetail = errorJson.detail || errorJson.message || errorText;
+        } catch {
+          errorDetail = errorText || errorDetail;
+        }
+        throw new Error(`搜索失败 - ${errorDetail}`);
+      }
       const data = await response.json();
       setReferences(data.references || []);
       pushStatus(`✓ 找到 ${data.references?.length || 0} 个参考资料`);
     } catch (error: any) {
-      pushStatus(`✗ 搜索失败: ${error.message}`);
+      const fullError = `✗ 搜索失败: ${error.message}`;
+      pushStatus(fullError);
+      console.error("Reference search error:", error);
     } finally {
       setBusy(null);
     }
@@ -119,12 +132,24 @@ export function HomePage() {
             : undefined,
         }),
       });
-      if (!response.ok) throw new Error(`大纲生成失败: ${response.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorDetail = errorJson.detail || errorJson.message || errorText;
+        } catch {
+          errorDetail = errorText || errorDetail;
+        }
+        throw new Error(`大纲生成失败 - ${errorDetail}`);
+      }
       const data = await response.json();
       setOutline(data.outline || []);
       pushStatus(`✓ 大纲生成完成，共 ${data.outline?.length || 0} 个部分`);
     } catch (error: any) {
-      pushStatus(`✗ 大纲生成失败: ${error.message}`);
+      const fullError = `✗ 大纲生成失败: ${error.message}`;
+      pushStatus(fullError);
+      console.error("Outline generation error:", error);
     } finally {
       setBusy(null);
     }
@@ -149,13 +174,25 @@ export function HomePage() {
             : undefined,
         }),
       });
-      if (!response.ok) throw new Error(`幻灯片生成失败: ${response.statusText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorDetail = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorDetail = errorJson.detail || errorJson.message || errorText;
+        } catch {
+          errorDetail = errorText || errorDetail;
+        }
+        throw new Error(`幻灯片生成失败 - ${errorDetail}`);
+      }
       const data = await response.json();
       setSlides(data.slides || []);
       pushStatus(`✓ 生成了 ${data.slides?.length || 0} 页幻灯片`);
       return data.slides || [];
     } catch (error: any) {
-      pushStatus(`✗ 幻灯片生成失败: ${error.message}`);
+      const fullError = `✗ 幻灯片生成失败: ${error.message}`;
+      pushStatus(fullError);
+      console.error("Slides generation error:", error);
       return [];
     } finally {
       setBusy(null);
@@ -390,7 +427,17 @@ export function HomePage() {
               <CardDescription>大纲、内容与图片预览</CardDescription>
             </CardHeader>
             <CardContent class="space-y-4">
-              <Show when={currentSlide()} fallback={<p class="text-slate-500">请先生成大纲或内容</p>}>
+              <Show
+                when={currentSlide()}
+                fallback={
+                  <Show
+                    when={busy()}
+                    fallback={<p class="text-slate-500">请先生成大纲或内容</p>}
+                  >
+                    <LoadingTimer operation={busy() as "reference" | "outline" | "slides" | "images"} />
+                  </Show>
+                }
+              >
                 <div class="flex flex-col gap-4">
                   <div class="flex items-start gap-4">
                     <div class="flex-1 space-y-3">
