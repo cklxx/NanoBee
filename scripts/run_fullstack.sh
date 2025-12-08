@@ -64,4 +64,4 @@ fi
 # Start frontend dev server
 echo "[run_fullstack] Starting frontend on port ${FRONTEND_PORT} (API base: ${API_BASE})"
 cd frontend
-npm run dev -- --hostname 0.0.0.0 --port "$FRONTEND_PORT"
+npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT"

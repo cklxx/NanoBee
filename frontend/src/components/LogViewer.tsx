@@ -1,6 +1,4 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import { createEffect, createSignal, onCleanup } from "solid-js";
 
 interface LogViewerProps {
   taskId: string;
@@ -8,10 +6,10 @@ interface LogViewerProps {
   initialLog?: string;
 }
 
-export function LogViewer({ taskId, apiBase, initialLog = "" }: LogViewerProps) {
-  const [log, setLog] = useState(initialLog);
+export function LogViewer(props: LogViewerProps) {
+  const [log, setLog] = createSignal(props.initialLog ?? "");
 
-  useEffect(() => {
+  createEffect(() => {
     let source: EventSource | null = null;
     let pollHandle: ReturnType<typeof setInterval> | null = null;
     let retryHandle: ReturnType<typeof setTimeout> | null = null;
@@ -19,7 +17,7 @@ export function LogViewer({ taskId, apiBase, initialLog = "" }: LogViewerProps) 
 
     const fetchProgress = async () => {
       try {
-        const res = await fetch(`${apiBase}/api/tasks/${taskId}/progress`);
+        const res = await fetch(`${props.apiBase}/api/tasks/${props.taskId}/progress`);
         if (!res.ok) return;
         const data = await res.json();
         if (typeof data.progress === "string") {
@@ -32,16 +30,13 @@ export function LogViewer({ taskId, apiBase, initialLog = "" }: LogViewerProps) 
 
     const startPolling = () => {
       if (pollHandle) return;
-      // Keep the UI updating even if streaming fails.
       fetchProgress();
       pollHandle = setInterval(fetchProgress, 3000);
     };
 
     const startStream = () => {
       if (source) return;
-
-      source = new EventSource(`${apiBase}/api/tasks/${taskId}/progress/stream`);
-
+      source = new EventSource(`${props.apiBase}/api/tasks/${props.taskId}/progress/stream`);
       source.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
@@ -52,7 +47,6 @@ export function LogViewer({ taskId, apiBase, initialLog = "" }: LogViewerProps) 
           console.error("Failed to parse progress update", err);
         }
       };
-
       source.onerror = (err) => {
         console.error("Progress stream error, falling back to polling", err);
         source?.close();
@@ -73,23 +67,19 @@ export function LogViewer({ taskId, apiBase, initialLog = "" }: LogViewerProps) 
 
     startStream();
 
-    return () => {
+    onCleanup(() => {
       stopped = true;
       source?.close();
-      if (pollHandle) {
-        clearInterval(pollHandle);
-      }
-      if (retryHandle) {
-        clearTimeout(retryHandle);
-      }
-    };
-  }, [apiBase, taskId]);
+      if (pollHandle) clearInterval(pollHandle);
+      if (retryHandle) clearTimeout(retryHandle);
+    });
+  });
 
   return (
-    <div className="card">
-      <h3 className="text-lg font-semibold mb-2">Progress Log</h3>
-      <pre className="bg-slate-50 border border-slate-200 rounded p-3 text-xs overflow-x-auto whitespace-pre-wrap">
-        {log || "No progress entries yet."}
+    <div class="card">
+      <h3 class="text-lg font-semibold mb-2">Progress Log</h3>
+      <pre class="bg-slate-50 border border-slate-200 rounded p-3 text-xs overflow-x-auto whitespace-pre-wrap">
+        {log() || "No progress entries yet."}
       </pre>
     </div>
   );
