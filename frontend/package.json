@@ -2,32 +2,28 @@
   "name": "nanobee-frontend",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
     "test:e2e": "playwright test",
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@radix-ui/react-slot": "1.1.0",
-    "autoprefixer": "10.4.20",
+    "@tanstack/router-devtools": "^1.74.0",
+    "@tanstack/solid-router": "^1.74.0",
     "class-variance-authority": "0.7.0",
     "clsx": "2.1.1",
-    "jspdf": "2.5.1",
-    "lucide-react": "0.360.0",
-    "next": "14.2.5",
-    "postcss": "8.4.38",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "tailwind-merge": "2.3.0",
-    "tailwindcss": "3.4.4"
+    "solid-js": "^1.8.17",
+    "tailwind-merge": "2.3.0"
   },
   "devDependencies": {
-    "@types/node": "20.12.7",
-    "@types/react": "18.2.48",
-    "@types/react-dom": "18.2.18",
     "@playwright/test": "^1.45.0",
-    "typescript": "5.4.5"
+    "@types/node": "20.12.7",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.38",
+    "tailwindcss": "3.4.4",
+    "typescript": "5.4.5",
+    "vite": "^5.2.0",
+    "vite-plugin-solid": "^2.10.1"
   }
 }
