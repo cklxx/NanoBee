@@ -1,79 +1,111 @@
+"""Configuration for the NanoBee agent backend.
+
+This module centralizes environment-driven settings so that the agent
+and skills can be configured without code changes. Settings are loaded
+from environment variables prefixed with ``NANOBEE_`` to avoid collisions.
+"""
 from __future__ import annotations
 
-import json
-from functools import lru_cache
-from pathlib import Path
-
+import os
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Runtime configuration for the PPT workflow API."""
+    """Application settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(
-        env_prefix="NANOBEE_",
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore",
+    model_config = SettingsConfigDict(env_prefix="NANOBEE_", env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    claude_api_key: str = Field(
+        default="",
+        description="API key for Claude / Anthropic service",
+        alias="ANTHROPIC_API_KEY",
     )
-
-    default_text_model: str = Field(
-        default="doubao-seed-1-6-251015",
-        description="Default text model for PPT workflow",
+    anthropic_base_url: str = Field(
+        default="",
+        description="Override base URL for Anthropic-compatible endpoints",
+        alias="ANTHROPIC_BASE_URL",
+    )
+    text_api_key: str = Field(
+        default="",
+        description="API key for text model providers (proxy friendly)",
+        alias="TEXT_API_KEY",
     )
     default_text_base_url: str = Field(
-        default="https://ark.cn-beijing.volces.com/api/v3",
-        description="Default text model base URL",
+        default="",
+        description="Base URL for Claude-compatible text generation service",
+        alias="DEFAULT_TEXT_BASE_URL",
     )
-    text_api_key: str | None = Field(
-        default=None,
-        description="API key for calling the default text model provider",
+    default_text_model: str = Field(
+        default="claude-3-5-sonnet-20241022",
+        description="Claude model used for text-first agent orchestration",
     )
-    default_image_model: str = Field(
-        default="doubao-seedream-4-5-251128",
-        description="Default image model for PPT workflow",
-    )
-    default_image_base_url: str = Field(
-        default="https://ark.cn-beijing.volces.com/api/v3",
-        description="Default image model base URL (root; images endpoint appended automatically)",
-    )
-    image_api_key: str | None = Field(
-        default=None,
-        description="API key for calling the default image model provider",
-    )
-    allow_image_watermark: bool = Field(
-        default=False,
-        description="Whether downstream image generation should add AI watermarks (disabled by default).",
-    )
-    workspaces_root: Path = Field(
-        default=Path("./workspaces"),
-        description="Root directory where prompt notebooks and artifacts are stored",
+    system_prompt: str = Field(
+        default=(
+            "你是一个帮助用户规划并生成PPT的智能体，"
+            "会主动调用工具获得大纲和生图能力，"
+            "确保输出结构化、可执行的内容。"
+        ),
+        description="System prompt used for all agent conversations",
     )
 
-    cors_origins: str = Field(
-        default="http://localhost:3000,http://localhost:3001,http://localhost,http://127.0.0.1:3000,http://127.0.0.1:3001",
-        description="Allowed CORS origins for the API (comma-separated or JSON list)",
+    openai_api_key: str = Field(
+        default="",
+        description="API key for OpenAI-compatible backends (for proxy)",
+        alias="OPENAI_API_KEY",
+    )
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        description="Base URL for OpenAI-compatible chat completions",
+        alias="OPENAI_BASE_URL",
+    )
+    openai_big_model: str = Field(default="gpt-4o", description="Primary OpenAI model", alias="OPENAI_BIG_MODEL")
+    openai_middle_model: str = Field(default="gpt-4o", description="Secondary OpenAI model", alias="OPENAI_MIDDLE_MODEL")
+    openai_small_model: str = Field(default="gpt-4o-mini", description="Lightweight OpenAI model", alias="OPENAI_SMALL_MODEL")
+
+    image_api_key: str = Field(
+        default="",
+        description="API key for the image generation LLM service",
+        alias="IMAGE_LLM_API_KEY",
+    )
+    image_api_base_url: str = Field(
+        default="https://api.example.com/v1",
+        description="Base URL for the image generation LLM HTTP API",
+    )
+    image_api_path: str = Field(
+        default="/images",
+        description="Path for the image generation endpoint relative to the base URL",
+    )
+    image_model: str = Field(
+        default="ppt-vision-pro",
+        description="Model name for generating slide visuals",
+    )
+    default_slide_count: int = Field(
+        default=6,
+        description="Fallback number of slides when the user does not specify",
     )
 
-    @property
-    def cors_origins_list(self) -> list[str]:
-        """Parsed CORS origins as a list regardless of input format."""
+    def apply_environment(self) -> None:
+        """Apply settings to process environment for SDK compatibility."""
 
-        raw_value = self.cors_origins.strip()
-        try:
-            loaded = json.loads(raw_value)
-            if isinstance(loaded, list):
-                return [str(item).strip() for item in loaded if str(item).strip()]
-        except json.JSONDecodeError:
-            pass
+        effective_key = self.text_api_key or self.claude_api_key
+        if effective_key and not os.environ.get("ANTHROPIC_API_KEY"):
+            os.environ["ANTHROPIC_API_KEY"] = effective_key
+        if self.anthropic_base_url and not os.environ.get("ANTHROPIC_BASE_URL"):
+            os.environ["ANTHROPIC_BASE_URL"] = self.anthropic_base_url
+        elif self.default_text_base_url and not os.environ.get("ANTHROPIC_BASE_URL"):
+            os.environ["ANTHROPIC_BASE_URL"] = self.default_text_base_url
+        if self.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = self.openai_api_key
+        if self.openai_base_url and not os.environ.get("OPENAI_BASE_URL"):
+            os.environ["OPENAI_BASE_URL"] = self.openai_base_url
+        if self.openai_big_model and not os.environ.get("OPENAI_BIG_MODEL"):
+            os.environ["OPENAI_BIG_MODEL"] = self.openai_big_model
+        if self.openai_middle_model and not os.environ.get("OPENAI_MIDDLE_MODEL"):
+            os.environ["OPENAI_MIDDLE_MODEL"] = self.openai_middle_model
+        if self.openai_small_model and not os.environ.get("OPENAI_SMALL_MODEL"):
+            os.environ["OPENAI_SMALL_MODEL"] = self.openai_small_model
 
-        normalized = raw_value
-        if normalized.startswith("[") and normalized.endswith("]"):
-            normalized = normalized[1:-1]
-        return [item.strip() for item in normalized.split(",") if item.strip()]
 
-
-@lru_cache()
-def get_settings() -> Settings:
-    return Settings()
+settings = Settings()
+settings.apply_environment()
