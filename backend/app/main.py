@@ -1,6 +1,5 @@
 """FastAPI entrypoint exposing the Claude agent and PPT skills."""
 from __future__ import annotations
-
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -8,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from .agent import summarize_run
 from .config import settings
-from .skills import create_ppt_visuals
+from .skills import create_ppt_visuals_handler
 
 app = FastAPI(title="NanoBee Agent", version="1.0.0")
 
@@ -40,7 +39,7 @@ async def run_agent_endpoint(payload: PromptRequest) -> dict[str, Any]:
 async def run_visual_skill(payload: VisualRequest) -> dict[str, Any]:
     slides = payload.slides or settings.default_slide_count
     try:
-        result = await create_ppt_visuals(
+        result = await create_ppt_visuals_handler(
             {"topic": payload.topic, "narrative": payload.narrative or "", "slides": slides}
         )
     except Exception as exc:  # pragma: no cover - defensive for HTTP layer
