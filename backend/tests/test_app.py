@@ -35,6 +35,15 @@ def test_health_endpoint():
     assert response.json() == {"status": "ok"}
 
 
+def test_proxy_health():
+    client = TestClient(app)
+    response = client.get("/proxy/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["openai_api_configured"] is False
+
+
 def test_agent_run_endpoint(monkeypatch):
     class FakeResult:
         def __init__(self, total_cost_usd: float | None = None) -> None:

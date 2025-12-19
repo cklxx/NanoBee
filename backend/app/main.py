@@ -8,8 +8,10 @@ from pydantic import BaseModel, Field
 from .agent import summarize_run
 from .config import settings
 from .skills import create_ppt_visuals_handler
+from .proxy.api import router as proxy_router
 
 app = FastAPI(title="NanoBee Agent", version="1.0.0")
+app.include_router(proxy_router, prefix="/proxy")
 
 
 class PromptRequest(BaseModel):
